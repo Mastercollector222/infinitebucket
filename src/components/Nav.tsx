@@ -3,7 +3,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { WalletButton } from "./WalletButton";
 import { LivePill } from "./LivePill";
 import { TickerTape } from "./TickerTape";
 import { useMarketContext } from "./MarketContext";
@@ -70,7 +69,6 @@ export function Nav() {
                 )}
               </span>
             </div>
-            <WalletButton />
             <a
               href={LINKS.trade}
               target="_blank"
