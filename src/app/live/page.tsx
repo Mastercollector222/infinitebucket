@@ -1,6 +1,7 @@
 "use client";
 
 import { LiveStrip } from "@/components/LiveStrip";
+import { EngineStrip } from "@/components/EngineStrip";
 import { TradeTape } from "@/components/TradeTape";
 import { LivePill } from "@/components/LivePill";
 import { CopyCA } from "@/components/CopyCA";
@@ -67,6 +68,7 @@ export default function LivePage() {
       </section>
 
       <LiveStrip />
+      <EngineStrip />
       <TradeTape limit={20} />
     </div>
   );

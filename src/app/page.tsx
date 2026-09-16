@@ -2,6 +2,7 @@ import { Hero } from "@/components/Hero";
 import { LiveStrip } from "@/components/LiveStrip";
 import { TradeTape } from "@/components/TradeTape";
 import { Mechanism } from "@/components/Mechanism";
+import { EngineStrip } from "@/components/EngineStrip";
 import { TokenFacts } from "@/components/TokenFacts";
 import { OfficialLinks } from "@/components/OfficialLinks";
 
@@ -19,6 +20,9 @@ export default function HomePage() {
 
       {/* E. Mechanism */}
       <Mechanism />
+
+      {/* E2. Engine — live burn + payouts */}
+      <EngineStrip />
 
       {/* F. Token facts */}
       <TokenFacts />

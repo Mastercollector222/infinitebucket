@@ -3,8 +3,9 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { useMarket, type MarketState } from "@/hooks/useMarket";
 import { useTokenStats, type TokenStatsState } from "@/hooks/useTokenStats";
+import { useEngine, type EngineState } from "@/hooks/useEngine";
 
-type MarketContextValue = MarketState & { token: TokenStatsState };
+type MarketContextValue = MarketState & { token: TokenStatsState; engine: EngineState };
 
 const MarketContext = createContext<MarketContextValue | null>(null);
 
@@ -12,8 +13,11 @@ const MarketContext = createContext<MarketContextValue | null>(null);
 export function MarketProvider({ children }: { children: ReactNode }) {
   const market = useMarket();
   const token = useTokenStats();
+  const engine = useEngine();
   return (
-    <MarketContext.Provider value={{ ...market, token }}>{children}</MarketContext.Provider>
+    <MarketContext.Provider value={{ ...market, token, engine }}>
+      {children}
+    </MarketContext.Provider>
   );
 }
 

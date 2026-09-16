@@ -29,6 +29,24 @@ export type MarketResponse = {
   error?: string;
 };
 
+export type EngineStats = {
+  // INFINITY bought back and burned by the engine (token units).
+  burnedInfinity: number | null;
+  // Bucket Shop engine lifetime payouts to holders, USD (engine-wide total).
+  paidToHoldersUsd: number | null;
+  // USD currently processed/held by the engine (engine-wide).
+  engineUsd: number | null;
+  // This token's pending jar (USD) awaiting the next payday.
+  jarUsd: number | null;
+  lastPaydayTs: number | null; // seconds epoch
+  status: string | null;
+  stalled: boolean;
+  source: "bucketshop" | null;
+  updatedAt: number;
+  ok: boolean;
+  error?: string;
+};
+
 export type TokenStats = {
   holders: number | null;
   totalSupply: string | null;

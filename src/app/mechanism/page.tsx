@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Mechanism } from "@/components/Mechanism";
+import { EngineStrip } from "@/components/EngineStrip";
 import { CopyCA } from "@/components/CopyCA";
 import { LINKS } from "@/lib/constants";
 
@@ -43,6 +44,8 @@ export default function MechanismPage() {
       </section>
 
       <Mechanism heading={false} />
+
+      <EngineStrip />
 
       <section>
         <h2 className="mb-6 font-display text-2xl font-bold">Straight answers</h2>
