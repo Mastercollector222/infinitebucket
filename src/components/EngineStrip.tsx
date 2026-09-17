@@ -3,16 +3,21 @@
 import { useMarketContext } from "./MarketContext";
 import { CountUp } from "./CountUp";
 import { LivePill } from "./LivePill";
-import { compact, formatUsd, timeAgo } from "@/lib/format";
+import { compact, formatNumber, formatUsd, timeAgo } from "@/lib/format";
 import { TOKEN } from "@/lib/constants";
 
 // Live proof of the mechanism: real burn + payout numbers from the Bucket Shop
-// engine (official launch-page indexer). Honest labels — the USD figure is the
-// engine-wide lifetime total, the burn is INFINITY-specific.
+// engine (the same indexer the official launch page reads). Burned total is
+// reconciled as: launch supply - current supply = graduation burn + engine
+// buy-back-and-burn.
 export function EngineStrip({ heading = true }: { heading?: boolean }) {
   const { engine, loading } = useMarketContext();
   const e = engine.engine;
   const first = loading && !e;
+
+  const Skel = ({ w = "w-28" }: { w?: string }) => (
+    <span className={`skeleton inline-block h-8 ${w}`} />
+  );
 
   return (
     <section className="py-4">
@@ -34,37 +39,58 @@ export function EngineStrip({ heading = true }: { heading?: boolean }) {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="glass flex flex-col gap-2 p-6">
           <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-            {TOKEN.symbol} bought back &amp; burned
+            {TOKEN.symbol} burned
           </span>
           <span className="font-mono text-3xl font-semibold text-[var(--color-white-soft)]">
             {first ? (
-              <span className="skeleton inline-block h-8 w-28" />
-            ) : e?.burnedInfinity != null ? (
-              <CountUp value={e.burnedInfinity} format={(n) => (n == null ? "—" : compact(n))} />
+              <Skel />
+            ) : e?.burnedTotal != null ? (
+              <CountUp value={e.burnedTotal} format={(n) => (n == null ? "—" : compact(n))} />
             ) : (
               "—"
             )}
           </span>
-          <span className="text-xs text-[var(--color-muted)]">
-            Removed from supply by the engine
+          <span className="text-xs leading-relaxed text-[var(--color-muted)]">
+            {e?.burnedAtGraduation != null && e?.burnedInfinity != null ? (
+              <>
+                {compact(e.burnedAtGraduation)} unsold, burned at graduation ·{" "}
+                {compact(e.burnedInfinity)} engine buy-back
+              </>
+            ) : (
+              "Removed from supply"
+            )}
           </span>
         </div>
 
         <div className="glass flex flex-col gap-2 p-6">
           <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-            Fees paid to holders
+            Fees to holders
           </span>
           <span className="font-mono text-3xl font-semibold text-[var(--color-buy)]">
             {first ? (
-              <span className="skeleton inline-block h-8 w-28" />
+              <Skel />
+            ) : e?.paidToHoldersTokenUsd != null ? (
+              <CountUp value={e.paidToHoldersTokenUsd} format={(n) => formatUsd(n)} />
             ) : e?.paidToHoldersUsd != null ? (
               <CountUp value={e.paidToHoldersUsd} format={(n) => formatUsd(n)} />
             ) : (
               "—"
             )}
           </span>
-          <span className="text-xs text-[var(--color-muted)]">
-            Bucket Shop engine · lifetime, all launches
+          <span className="text-xs leading-relaxed text-[var(--color-muted)]">
+            {e?.paidToHoldersTokenUsd != null ? (
+              <>
+                USDG routed to {TOKEN.symbol} payouts
+                {e.infinityToHolders != null
+                  ? ` · +${compact(e.infinityToHolders)} ${TOKEN.symbol}`
+                  : ""}
+                {e.paidToHoldersUsd != null
+                  ? ` · engine lifetime: ${formatUsd(e.paidToHoldersUsd)}`
+                  : ""}
+              </>
+            ) : (
+              "Bucket Shop engine · lifetime"
+            )}
           </span>
         </div>
 
@@ -73,15 +99,9 @@ export function EngineStrip({ heading = true }: { heading?: boolean }) {
             Pending in jar
           </span>
           <span className="font-mono text-3xl font-semibold text-[var(--color-white-soft)]">
-            {first ? (
-              <span className="skeleton inline-block h-8 w-24" />
-            ) : e?.jarUsd != null ? (
-              formatUsd(e.jarUsd)
-            ) : (
-              "—"
-            )}
+            {first ? <Skel w="w-24" /> : e?.jarUsd != null ? formatUsd(e.jarUsd) : "—"}
           </span>
-          <span className="text-xs text-[var(--color-muted)]">
+          <span className="text-xs leading-relaxed text-[var(--color-muted)]">
             {e?.lastPaydayTs
               ? `Last payout ${timeAgo(e.lastPaydayTs * 1000)} ago`
               : "Awaiting next payday"}
@@ -90,10 +110,10 @@ export function EngineStrip({ heading = true }: { heading?: boolean }) {
         </div>
       </div>
 
-      <p className="mt-4 text-xs text-[var(--color-muted)]">
-        Burn is {TOKEN.symbol}-specific. The payout figure is the Bucket Shop engine&apos;s
-        lifetime total across all launches — a per-token USD breakdown is not published by the
-        source, so it is not invented here.
+      <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
+        Supply check: {formatNumber(TOKEN.totalSupply)} minted
+        {e?.supplyNow != null ? `, ${formatNumber(Math.round(e.supplyNow))} now` : ""}. Holder
+        payouts convert to BUCKET before distribution. Source: Bucket Shop launch indexer.
       </p>
     </section>
   );

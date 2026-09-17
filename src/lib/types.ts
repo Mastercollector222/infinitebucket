@@ -30,8 +30,18 @@ export type MarketResponse = {
 };
 
 export type EngineStats = {
-  // INFINITY bought back and burned by the engine (token units).
+  // INFINITY bought back and burned by the engine (token units, ongoing).
   burnedInfinity: number | null;
+  // INFINITY burned once at graduation (unsold bonding-curve supply).
+  burnedAtGraduation: number | null;
+  // Total INFINITY destroyed = launch supply - current supply.
+  burnedTotal: number | null;
+  // Current on-chain total supply (token units).
+  supplyNow: number | null;
+  // Fees routed to this token's holder leg, USDG-denominated (per-token).
+  paidToHoldersTokenUsd: number | null;
+  // INFINITY tokens routed to the holder leg (converted to BUCKET on payout).
+  infinityToHolders: number | null;
   // Bucket Shop engine lifetime payouts to holders, USD (engine-wide total).
   paidToHoldersUsd: number | null;
   // USD currently processed/held by the engine (engine-wide).
