@@ -43,6 +43,7 @@ export function Nav() {
               </span>
             </div>
             {[
+              { href: "/reward-the-holders", label: "Reward the Holders" },
               { href: "/leaderboard", label: "Leaderboard" },
               { href: "/profile", label: "Profile" },
             ].map((l) => (

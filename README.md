@@ -45,6 +45,8 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SITE_URL` | No | Canonical URL for metadata/OG (defaults to infinitebucket.net). |
 | `NEXT_PUBLIC_X_URL` | No | Override for the X link (defaults to `https://x.com/InfinityBucket_`). |
 | `NEXT_PUBLIC_TELEGRAM_URL` | No | Override for the Telegram link (defaults to `https://t.me/InfiniteBucket`). |
+| `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1789948800` = 21 Sep 2026 00:00 UTC). Server-side only. |
+| `GIVEAWAY_PAYOUT_TX` | No | Set to the 50 USDG payout tx hash after the creator sends it — the page links it. Server-side only. |
 
 ## Database (run once in the Supabase SQL editor)
 
@@ -109,6 +111,30 @@ alter table public.users add column if not exists avatar_url text;
   signer's row only. jpg/png/webp, max 1 MB, no svg. The API secret lives
   only in server env vars.
 
+### Reward the Holders (`/reward-the-holders`)
+
+Read-only giveaway page — the site never custody funds and never asks for
+deposits.
+
+- Gate: `balanceOf >= 5,000,000 INFINITY` at the snapshot. Excluded: the
+  Uniswap v4 PoolManager, zero/dead addresses, and the creator wallet
+  (`0x7c26…6006`).
+- **Cutoff: 21 Sep 2026 00:00 UTC = Unix `1789948800`.** ⚠️ The original
+  spec wrote this as `1758412800` — that value is *2025*-09-21 (one year
+  early). Confirm whether "5:00 PM Mountain" meant MDT (UTC-6, → 23:00 UTC)
+  or MST (UTC-7, → 00:00 UTC); override with `GIVEAWAY_CUTOFF_TS` if it
+  should be `1789945200` (23:00 UTC) instead.
+- Before cutoff: countdown + live ≥5M holder estimate (not the official
+  list).
+- After cutoff: `/api/giveaway` binary-searches the public RPC for the last
+  block `<= cutoff` (snapshot block), reads each holder's `balanceOf` **at
+  that block** via `eth_call`, filters eligible, then
+  `winner = uint(block.hash) mod eligible.length` — the math is printed on
+  the page. Holder set comes from the launch indexer; a wallet that fully
+  exits before it can be indexed is the only miss case.
+- After the creator sends the 50 USDG, set `GIVEAWAY_PAYOUT_TX=<tx hash>`
+  in env and the page links it. Server-side only (no `NEXT_PUBLIC_`).
+
 ## Run
 
 ```bash
@@ -154,8 +180,10 @@ The contract is currently **unverified** — the site never claims it is audited
 ## Pages
 
 - `/` — Home (hero, live stats row, fee-split grid, engine row, official links)
+- `/leaderboard` — Top 50 on-chain holders joined to claimed profiles
+- `/reward-the-holders` — Read-only giveaway: snapshot countdown, eligibility, winner
 - `/profile` — Wallet account (username, bio, socials, avatar)
-- `/u/[username]` — Public read-only profile (balance, bio, socials)
+- `/u/[username]` — Public read-only profile (balance, bio, socials, payouts)
 
 ## Notes
 
