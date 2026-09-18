@@ -18,6 +18,19 @@ export const QUOTE = {
   decimals: 6, // NEVER treat as 18
 } as const;
 
+// Bucket Shop engine payout token + the keeper EOA that distributes it.
+// Confirmed against live payout txs: direct BUCKET.transfer calls from this
+// address to INFINITY holders. It is shared across launches — attribution to
+// INFINITY is only valid when the wallet holds no other launch tokens.
+export const BUCKET = {
+  symbol: "BUCKET",
+  address: "0xbc9E7b1c5C0081f4aE85e71eC95703d3dEC9ffaD" as `0x${string}`,
+  decimals: 18,
+} as const;
+
+export const ENGINE_DISTRIBUTOR =
+  "0x2ccc152ad68419f777531e6a40a52325e2a80ee2" as const;
+
 const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 4663;
 
 export const CHAIN = {

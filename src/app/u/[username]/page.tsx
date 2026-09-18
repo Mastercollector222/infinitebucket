@@ -8,6 +8,7 @@ import { formatUnits } from "viem";
 import { supabase, type UserRow } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthContext";
 import { Avatar } from "@/components/Avatar";
+import { PayoutCard } from "@/components/PayoutCard";
 import { erc20Abi } from "@/lib/abi";
 import { CHAIN, TOKEN } from "@/lib/constants";
 import { compact, truncateAddress } from "@/lib/format";
@@ -89,6 +90,7 @@ export default function PublicProfilePage() {
           <p className="text-sm leading-relaxed text-[var(--color-muted)]">
             This wallet hasn&apos;t picked a username yet.
           </p>
+          {wallet && <PayoutCard wallet={wallet} />}
           <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
             <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
               {TOKEN.symbol} balance
@@ -152,6 +154,8 @@ export default function PublicProfilePage() {
               <SocialIcon href={row.website_url} label="Website" icon="globe" />
             )}
           </div>
+
+          {wallet && <PayoutCard wallet={wallet} />}
 
           <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
             <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
