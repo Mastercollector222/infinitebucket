@@ -2,7 +2,6 @@
 
 import { useMarketContext } from "./MarketContext";
 import { CountUp } from "./CountUp";
-import { LivePill } from "./LivePill";
 import { formatUsd, formatPercent, formatNumber, compact } from "@/lib/format";
 
 type Stat = {
@@ -79,7 +78,9 @@ export function LiveStrip() {
     <section className="glass p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <LivePill />
+          <span className="font-display text-sm font-bold text-[var(--color-chrome)]">
+            Live market
+          </span>
           {stale && (
             <span className="text-xs text-[var(--color-gold)]">
               last good value · source stale

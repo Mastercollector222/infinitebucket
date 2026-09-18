@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LINKS, SOCIALS, CHAIN } from "@/lib/constants";
+import { LINKS, SOCIALS, CHAIN, TOKEN } from "@/lib/constants";
 
 export function Footer() {
   return (
@@ -11,9 +11,31 @@ export function Footer() {
               Infinite<span className="text-chrome">Bucket</span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-[var(--color-muted)]">
-              $INFINITY is an ERC-20 on {CHAIN.name} (chain {CHAIN.id}). This site is
-              informational and is not financial advice. Nothing here is an offer, and no price,
-              listing, or Robinhood app inclusion is promised.
+              $INFINITY is an ERC-20 on {CHAIN.name} (chain {CHAIN.id}). Holder payouts are made
+              in Bucket Shop Token. This site is informational and is not financial advice.
+              Nothing here is an offer, and no price, listing, or Robinhood app inclusion is
+              promised.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <a
+                href={LINKS.trade}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-metal rounded-xl px-5 py-2.5 text-sm font-semibold"
+              >
+                Buy INFINITY
+              </a>
+            </div>
+            <p className="mt-4 break-all font-mono text-xs leading-relaxed text-[var(--color-muted)]">
+              CA{" "}
+              <a
+                href={LINKS.blockscoutToken}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--color-chrome)] transition hover:text-white"
+              >
+                {TOKEN.address}
+              </a>
             </p>
             <div className="mt-5 flex items-center gap-3">
               {SOCIALS.x && (
@@ -91,7 +113,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-10 border-t border-[var(--color-stroke)] pt-6 text-xs text-[var(--color-muted)]">
-          © {new Date().getFullYear()} InfiniteBucket · {CHAIN.name} only · Not financial advice.
+          © {new Date().getFullYear()} InfiniteBucket · {CHAIN.name} only
         </div>
       </div>
     </footer>

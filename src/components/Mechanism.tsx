@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { FEE_SPLIT } from "./FeeSplit";
 
 const STEPS = [
   {
@@ -21,17 +22,12 @@ const STEPS = [
   {
     n: "04",
     title: "Payouts to holders",
-    body: "75% of the creator share is pushed back to holders through BucketShop. Holders are paid in BUCKET (100%). There is no claim button.",
+    body: "75% of the creator share is pushed back to holders through BucketShop. Holders are paid in Bucket Shop Token (100%). There is no claim button.",
   },
 ];
 
-// Creator-published split of the creator share of the 4% swap fee.
-const DISTRIBUTION = [
-  { pct: "75%", label: "Payouts to holders", note: "Paid in BUCKET via BucketShop" },
-  { pct: "15%", label: "Buy back & burn", note: "INFINITY removed from supply" },
-  { pct: "5%", label: "Locked pool", note: "Into the locked liquidity pool" },
-  { pct: "5%", label: "Creator wallet", note: "To the creator" },
-];
+// Creator-published split of the creator share of the 4% swap fee — shared
+// copy lives in FeeSplit so the labels never drift.
 
 export function Mechanism({ heading = true }: { heading?: boolean }) {
   return (
@@ -82,7 +78,7 @@ export function Mechanism({ heading = true }: { heading?: boolean }) {
           </span>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {DISTRIBUTION.map((d) => (
+          {FEE_SPLIT.map((d) => (
             <div key={d.label} className="glass flex flex-col gap-1 p-5">
               <span className="font-display text-3xl font-extrabold text-chrome">{d.pct}</span>
               <span className="font-display text-sm font-bold text-[var(--color-white-soft)]">
@@ -95,8 +91,8 @@ export function Mechanism({ heading = true }: { heading?: boolean }) {
       </div>
 
       <p className="mt-6 rounded-xl border border-[var(--color-stroke)] bg-[rgba(226,196,138,0.06)] px-4 py-3 text-sm text-[var(--color-gold)]">
-        Figures are set by the creator at launch. Holders are paid in BUCKET via BucketShop — not
-        tokenized stocks. This is not financial advice and no yield is promised.
+        Figures are set by the creator at launch. Holders are paid in Bucket Shop Token. This is
+        not financial advice and no yield is promised.
       </p>
     </section>
   );

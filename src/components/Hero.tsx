@@ -2,26 +2,18 @@
 
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { LINKS } from "@/lib/constants";
 import { CopyCA } from "./CopyCA";
-import { LivePill } from "./LivePill";
-import { useMarketContext } from "./MarketContext";
-import { formatUsd, formatPercent } from "@/lib/format";
 
 // Section B: left typography, right orbiting bucket with metal sheen.
 export function Hero() {
-  const { data } = useMarketContext();
-  const change = data?.change24h ?? null;
-
   return (
-    <section className="grid items-center gap-10 pb-6 pt-14 sm:pt-20 lg:grid-cols-2 lg:gap-8">
+    <section className="grid items-center gap-10 py-4 lg:grid-cols-2 lg:gap-8">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
         <div className="mb-5 inline-flex items-center gap-2">
-          <LivePill />
           <span className="rounded-full border border-[var(--color-stroke)] px-2.5 py-1 font-mono text-xs text-[var(--color-amethyst)]">
             Robinhood Chain · 4663
           </span>
@@ -41,41 +33,7 @@ export function Hero() {
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <a
-            href={LINKS.trade}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-metal rounded-xl px-6 py-3.5 text-base font-semibold"
-          >
-            Buy INFINITY
-          </a>
           <CopyCA variant="button" label="Copy CA" />
-          <a
-            href={LINKS.geckoterminal}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-ghost rounded-xl px-5 py-3.5 text-sm font-medium"
-          >
-            View live pool
-          </a>
-        </div>
-
-        <div className="mt-6 flex items-center gap-4">
-          <CopyCA variant="chip" />
-          {data?.priceUsd != null && (
-            <span className="font-mono text-sm text-[var(--color-muted)]">
-              {formatUsd(data.priceUsd)}
-              {change != null && (
-                <span
-                  className={
-                    change >= 0 ? "ml-2 text-[var(--color-buy)]" : "ml-2 text-[var(--color-sell)]"
-                  }
-                >
-                  {formatPercent(change)}
-                </span>
-              )}
-            </span>
-          )}
         </div>
       </motion.div>
 

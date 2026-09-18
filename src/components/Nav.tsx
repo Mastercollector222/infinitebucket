@@ -5,7 +5,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { WalletButton } from "./WalletButton";
 import { LivePill } from "./LivePill";
-import { TickerTape } from "./TickerTape";
 import { useMarketContext } from "./MarketContext";
 import { formatUsd } from "@/lib/format";
 import { LINKS } from "@/lib/constants";
@@ -82,7 +81,6 @@ export function Nav() {
           </div>
         </div>
       </div>
-      <TickerTape />
     </header>
   );
 }

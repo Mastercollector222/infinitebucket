@@ -42,6 +42,7 @@ export const POOL = {
 export const LINKS = {
   // Primary Buy CTA → Uniswap swap on Robinhood Chain (USDG → INFINITY).
   trade: `https://app.uniswap.org/swap?chain=${POOL.network}&inputCurrency=${QUOTE.address}&outputCurrency=${TOKEN.address}`,
+  dexscreener: `https://dexscreener.com/${POOL.network}/${POOL.id}`,
   launch: `https://launch.bucketmarkets.com/#t/${TOKEN.address}`,
   geckoterminal: `https://www.geckoterminal.com/${POOL.network}/pools/${POOL.id}`,
   robinscanner: `https://robinscanner.com/tokens/${TOKEN.address}`,

@@ -25,7 +25,7 @@ const NOTES = [
   },
   {
     q: "What are holders paid in?",
-    a: "BUCKET, 100% — routed to holders through BucketShop, not tokenized stocks.",
+    a: "Bucket Shop Token, 100% — routed to holders through BucketShop.",
   },
 ];
 

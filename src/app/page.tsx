@@ -1,34 +1,26 @@
-import { Hero } from "@/components/Hero";
 import { LiveStrip } from "@/components/LiveStrip";
-import { TradeTape } from "@/components/TradeTape";
-import { Mechanism } from "@/components/Mechanism";
-import { EngineStrip } from "@/components/EngineStrip";
-import { TokenFacts } from "@/components/TokenFacts";
-import { OfficialLinks } from "@/components/OfficialLinks";
+import { Hero } from "@/components/Hero";
+import { FeeSplit } from "@/components/FeeSplit";
+import { FactsRow } from "@/components/FactsRow";
+import { LinksRow } from "@/components/LinksRow";
 
 export default function HomePage() {
   return (
-    <div className="flex flex-col gap-16 pb-28 sm:gap-20 lg:pb-16">
-      {/* B. Hero */}
-      <Hero />
-
-      {/* C. Live strip */}
+    <div className="flex flex-col gap-12 pb-16 pt-6 sm:gap-14">
+      {/* Single live stats bar under the header */}
       <LiveStrip />
 
-      {/* D. Trade tape */}
-      <TradeTape limit={12} />
+      {/* One hero */}
+      <Hero />
 
-      {/* E. Mechanism */}
-      <Mechanism />
+      {/* One fee-split grid */}
+      <FeeSplit />
 
-      {/* E2. Engine — live burn + payouts */}
-      <EngineStrip />
+      {/* One facts row */}
+      <FactsRow />
 
-      {/* F. Token facts */}
-      <TokenFacts />
-
-      {/* G. Official links */}
-      <OfficialLinks />
+      {/* One official-link row */}
+      <LinksRow />
     </div>
   );
 }
