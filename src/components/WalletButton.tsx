@@ -6,6 +6,7 @@ import { CHAIN, TOKEN, SITE_URL } from "@/lib/constants";
 import { truncateAddress, compact } from "@/lib/format";
 import { useInfinityBalance } from "@/hooks/useInfinityBalance";
 import { useAuth } from "./AuthContext";
+import { Avatar } from "./Avatar";
 
 const addChainParameter = {
   chainName: CHAIN.name,
@@ -88,7 +89,7 @@ export function WalletButton() {
 }
 
 function ConnectedPill() {
-  const { address, username, disconnect } = useAuth();
+  const { address, username, row, disconnect } = useAuth();
   const { balance, isLoading } = useInfinityBalance();
   const { watchAsset } = useWatchAsset();
   const [added, setAdded] = useState(false);
@@ -99,9 +100,9 @@ function ConnectedPill() {
         type="button"
         onClick={disconnect}
         title="Disconnect"
-        className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-stroke)] bg-[rgba(28,20,44,0.6)] px-3 py-2 text-sm transition hover:border-[rgba(196,160,255,0.35)]"
+        className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-stroke)] bg-[rgba(28,20,44,0.6)] py-1 pl-1 pr-3 text-sm transition hover:border-[rgba(196,160,255,0.35)]"
       >
-        <span className="live-dot" />
+        <Avatar url={row?.avatar_url} wallet={address} username={username} size={40} />
         <span className="font-mono text-[var(--color-chrome)]">
           {username ?? truncateAddress(address)}
         </span>

@@ -7,6 +7,7 @@ import { useReadContract } from "wagmi";
 import { formatUnits } from "viem";
 import { supabase, type UserRow } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthContext";
+import { Avatar } from "@/components/Avatar";
 import { erc20Abi } from "@/lib/abi";
 import { CHAIN, LINKS, TOKEN } from "@/lib/constants";
 import { compact, truncateAddress } from "@/lib/format";
@@ -64,7 +65,13 @@ export default function PublicProfilePage() {
         <div className="glass flex flex-col gap-5 p-6 sm:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--color-white-soft)]">
+              <Avatar
+                url={row.avatar_url}
+                wallet={row.wallet}
+                username={row.username}
+                size={96}
+              />
+              <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-[var(--color-white-soft)]">
                 {row.username}
               </h1>
               <a

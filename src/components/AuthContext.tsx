@@ -40,6 +40,7 @@ type AuthValue = {
   verify: () => Promise<void>;
   submitUsername: (u: string) => Promise<boolean>;
   saveProfile: (p: ProfileInput) => Promise<string | null>;
+  setAvatar: (url: string | null) => void;
   disconnect: () => void;
   clearError: () => void;
 };
@@ -251,6 +252,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [address],
   );
 
+  // Avatar updates happen server-side (/api/avatar); this just syncs the row.
+  const setAvatar = useCallback((url: string | null) => {
+    setRow((r) => (r ? { ...r, avatar_url: url } : r));
+  }, []);
+
   const disconnect = useCallback(() => {
     clearSession();
     setUsername(null);
@@ -274,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verify,
         submitUsername,
         saveProfile,
+        setAvatar,
         disconnect,
         clearError,
       }}

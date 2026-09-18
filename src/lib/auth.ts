@@ -17,6 +17,12 @@ export function loginMessage(address: string, iso: string): string {
   return `Infinite Bucket login\nAddress: ${address}\nAt: ${iso}`;
 }
 
+// Separate proof for avatar uploads — the API route verifies this before
+// touching Cloudinary or the users row, so only the wallet owner can write.
+export function avatarMessage(address: string, iso: string): string {
+  return `Infinite Bucket avatar upload\nAddress: ${address}\nAt: ${iso}`;
+}
+
 export function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);

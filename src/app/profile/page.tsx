@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSignMessage } from "wagmi";
 import { useAuth } from "@/components/AuthContext";
-import { USERNAME_RE } from "@/lib/auth";
+import { Avatar } from "@/components/Avatar";
+import { USERNAME_RE, avatarMessage } from "@/lib/auth";
 import {
   BIO_MAX,
   checkBio,
@@ -17,9 +19,13 @@ import { truncateAddress } from "@/lib/format";
 // Wallet-owned profile: edit username + optional fields on the caller's own
 // users row. Save only ever UPDATEs that row.
 export default function ProfilePage() {
-  const { status, address, row, connect, verify, saveProfile, error: authError } =
+  const { status, address, row, connect, verify, saveProfile, setAvatar, error: authError } =
     useAuth();
+  const { signMessageAsync } = useSignMessage();
+  const fileRef = useRef<HTMLInputElement>(null);
 
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarErr, setAvatarErr] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
   const [xUrl, setXUrl] = useState("");
@@ -40,6 +46,48 @@ export default function ProfilePage() {
   }, [row]);
 
   const connected = status === "ready" || status === "needs_username";
+
+  // Signed upload: the wallet signs a fresh proof, then the file + proof go to
+  // /api/avatar which verifies before touching Cloudinary or the users row.
+  const uploadAvatarFile = async (file: File) => {
+    if (!address || avatarBusy) return;
+    setAvatarErr(null);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setAvatarErr("Only jpg, png, or webp images.");
+      return;
+    }
+    if (file.size > 1_048_576) {
+      setAvatarErr("Avatar must be 1 MB or smaller.");
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const iso = new Date().toISOString();
+      const signature = await signMessageAsync({
+        message: avatarMessage(address, iso),
+      });
+      const form = new FormData();
+      form.append("file", file);
+      form.append("address", address);
+      form.append("iso", iso);
+      form.append("signature", signature);
+      const res = await fetch("/api/avatar", { method: "POST", body: form });
+      const json = (await res.json()) as { ok: boolean; avatar_url?: string; error?: string };
+      if (!res.ok || !json.ok || !json.avatar_url) {
+        throw new Error(json.error ?? "Upload failed.");
+      }
+      setAvatar(json.avatar_url);
+    } catch (e) {
+      const msg = (e as { shortMessage?: string; message?: string }).shortMessage
+        ?? (e as Error).message;
+      setAvatarErr(
+        /reject|denied|cancel/i.test(msg) ? "Signature request rejected." : msg,
+      );
+    } finally {
+      setAvatarBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,6 +156,41 @@ export default function ProfilePage() {
         </div>
       ) : (
         <form onSubmit={submit} className="glass mt-8 flex flex-col gap-5 p-6">
+          <div className="flex items-center gap-4">
+            <Avatar
+              url={row?.avatar_url}
+              wallet={address}
+              username={row?.username}
+              size={96}
+            />
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                disabled={avatarBusy}
+                onClick={() => fileRef.current?.click()}
+                className="btn-ghost rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-60"
+              >
+                {avatarBusy ? "Check wallet…" : "Change avatar"}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadAvatarFile(f);
+                }}
+              />
+              <span className="text-xs text-[var(--color-muted)]">
+                jpg · png · webp — max 1 MB
+              </span>
+              {avatarErr && (
+                <span className="text-xs text-[var(--color-sell)]">{avatarErr}</span>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-3">
             <span className="font-mono text-sm text-[var(--color-muted)]">
               {address ? truncateAddress(address) : ""}

@@ -35,6 +35,10 @@ cp .env.example .env.local
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes (accounts) | Supabase project URL for wallet accounts. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes (accounts) | Publishable anon key. No service_role anywhere. |
+| `CLOUDINARY_CLOUD_NAME` | Yes (avatars) | Cloudinary cloud name (server-side only). |
+| `CLOUDINARY_API_KEY` | Yes (avatars) | Cloudinary API key (server-side only). |
+| `CLOUDINARY_API_SECRET` | Yes (avatars) | Cloudinary API secret — **never** prefix with `NEXT_PUBLIC_`. |
+| `CLOUDINARY_UPLOAD_PRESET` | No | Signed upload preset name (default `ib_avatars`). |
 | `NEXT_PUBLIC_CHAIN_ID` | No | Defaults to `4663` (Robinhood Chain). |
 | `NEXT_PUBLIC_TOKEN` | No | INFINITY contract. |
 | `NEXT_PUBLIC_RPC` | No | Robinhood Chain RPC URL. |
@@ -74,6 +78,13 @@ create policy "users_update" on public.users
 alter table public.users
   add constraint users_username_format
   check (username ~ '^[a-zA-Z0-9_]{3,16}$');
+
+-- optional profile columns (bio/socials/avatar)
+alter table public.users add column if not exists bio text;
+alter table public.users add column if not exists x_url text;
+alter table public.users add column if not exists telegram_url text;
+alter table public.users add column if not exists website_url text;
+alter table public.users add column if not exists avatar_url text;
 ```
 
 ## Wallet accounts
@@ -86,6 +97,17 @@ alter table public.users
 - A verified session persists in `localStorage` for 24h, then re-verifies.
 - First-time wallets pick a username (`3–16` chars, `[a-zA-Z0-9_]`).
 - The token contract is read-only here — no transfers, no `approve()`.
+
+### Profiles + avatars
+
+- `/profile` edits username, bio, and social links on the caller's own row.
+- `/u/<username>` is the public read-only profile.
+- Avatars upload through `POST /api/avatar`: the wallet signs a fresh
+  `Infinite Bucket avatar upload` proof, the route verifies it with
+  `viem.verifyMessage`, then does a **signed** Cloudinary upload
+  (`avatars/<lowercase-wallet>`) and updates `users.avatar_url` for the
+  signer's row only. jpg/png/webp, max 1 MB, no svg. The API secret lives
+  only in server env vars.
 
 ## Run
 
