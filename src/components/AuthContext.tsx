@@ -37,7 +37,7 @@ type AuthValue = {
   row: UserRow | null;
   error: string | null;
   connect: () => void;
-  verify: () => Promise<void>;
+  verify: (addr?: `0x${string}`) => Promise<void>;
   submitUsername: (u: string) => Promise<boolean>;
   saveProfile: (p: ProfileInput) => Promise<string | null>;
   setAvatar: (url: string | null) => void;
@@ -124,34 +124,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [fetchUser, persist],
   );
 
-  const verify = useCallback(async () => {
-    if (!address || busy.current) return;
-    busy.current = true;
-    setError(null);
-    setStatus("signing");
-    try {
-      const iso = new Date().toISOString();
-      const message = loginMessage(address, iso);
-      const signature = await signMessageAsync({ message });
-      const ok = await verifyMessage({ address, message, signature });
-      if (!ok) throw new Error("Signature did not match this address.");
-      proofRef.current = { iso, signature };
-      await applyVerified(address, true);
-    } catch (e) {
-      const msg = (e as { shortMessage?: string; message?: string }).shortMessage
-        ?? (e as Error).message;
-      setError(
-        /reject|denied|cancel/i.test(msg)
-          ? "Signature request rejected."
-          : `Sign-in failed: ${msg}`,
-      );
-      setStatus("needs_verify");
-    } finally {
-      busy.current = false;
-    }
-  }, [address, signMessageAsync, applyVerified]);
+  const verify = useCallback(
+    async (addr?: `0x${string}`) => {
+      const a = addr ?? address;
+      if (!a || busy.current) return;
+      busy.current = true;
+      setError(null);
+      setStatus("signing");
+      try {
+        const iso = new Date().toISOString();
+        const message = loginMessage(a, iso);
+        const signature = await signMessageAsync({ message });
+        const ok = await verifyMessage({ address: a, message, signature });
+        if (!ok) throw new Error("Signature did not match this address.");
+        proofRef.current = { iso, signature };
+        await applyVerified(a, true);
+      } catch (e) {
+        const msg = (e as { shortMessage?: string; message?: string }).shortMessage
+          ?? (e as Error).message;
+        setError(
+          /reject|denied|cancel/i.test(msg)
+            ? "Signature request rejected."
+            : `Sign-in failed: ${msg}`,
+        );
+        setStatus("needs_verify");
+      } finally {
+        busy.current = false;
+      }
+    },
+    [address, signMessageAsync, applyVerified],
+  );
 
-  // Wallet connected → resume fresh session or request a signature.
+  // Wallet connected → resume a fresh session, or ask for a signature.
+  // Never fire personal_sign without a user gesture: a popup-less request
+  // gets auto-rejected by some wallets and reads as a phantom rejection.
   useEffect(() => {
     if (!isConnected || !address) {
       setStatus("idle");
@@ -167,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (status !== "signing" && status !== "needs_username" && status !== "ready") {
-      verify();
+      setStatus("needs_verify");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, address]);
@@ -180,15 +186,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setStatus("connecting");
-    connectAsync({ connector: injected }).catch((e) => {
-      setError(
-        /reject|denied|cancel/i.test((e as Error).message)
-          ? "Connection request rejected."
-          : `Connect failed: ${(e as Error).message}`,
-      );
-      setStatus("idle");
-    });
-  }, [connectAsync, connectors]);
+    connectAsync({ connector: injected })
+      .then((res) => {
+        // Chain straight into the signature while we're still in the user's
+        // click context. Address state may lag — use the connector's account.
+        const a = res.accounts?.[0] as `0x${string}` | undefined;
+        if (a) {
+          verify(a);
+        } else {
+          setStatus("needs_verify");
+        }
+      })
+      .catch((e) => {
+        setError(
+          /reject|denied|cancel/i.test((e as Error).message)
+            ? "Connection request rejected."
+            : `Connect failed: ${(e as Error).message}`,
+        );
+        setStatus("idle");
+      });
+  }, [connectAsync, connectors, verify]);
 
   const submitUsername = useCallback(
     async (u: string): Promise<boolean> => {
