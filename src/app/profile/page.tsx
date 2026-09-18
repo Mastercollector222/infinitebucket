@@ -72,9 +72,20 @@ export default function ProfilePage() {
         signature = prior.proof.signature;
       } else {
         iso = new Date().toISOString();
-        signature = await signMessageAsync({
-          message: avatarMessage(address, iso),
-        });
+        try {
+          signature = await signMessageAsync({
+            message: avatarMessage(address, iso),
+          });
+        } catch (e) {
+          const msg = (e as { shortMessage?: string; message?: string }).shortMessage
+            ?? (e as Error).message;
+          setAvatarErr(
+            /reject|denied|cancel/i.test(msg)
+              ? "Signature request rejected."
+              : `Sign-in failed: ${msg}`,
+          );
+          return;
+        }
       }
       const form = new FormData();
       form.append("file", file);
@@ -84,15 +95,13 @@ export default function ProfilePage() {
       const res = await fetch("/api/avatar", { method: "POST", body: form });
       const json = (await res.json()) as { ok: boolean; avatar_url?: string; error?: string };
       if (!res.ok || !json.ok || !json.avatar_url) {
-        throw new Error(json.error ?? "Upload failed.");
+        // Server-side failure — show the real reason, never relabel it.
+        setAvatarErr(json.error ?? "Upload failed.");
+        return;
       }
       setAvatar(json.avatar_url);
     } catch (e) {
-      const msg = (e as { shortMessage?: string; message?: string }).shortMessage
-        ?? (e as Error).message;
-      setAvatarErr(
-        /reject|denied|cancel/i.test(msg) ? "Signature request rejected." : msg,
-      );
+      setAvatarErr((e as Error).message ?? "Upload failed.");
     } finally {
       setAvatarBusy(false);
       if (fileRef.current) fileRef.current.value = "";
