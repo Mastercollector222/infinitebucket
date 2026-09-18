@@ -9,6 +9,9 @@ export type Session = {
   wallet: string; // lowercase address
   username: string | null;
   verifiedAt: number; // ms epoch of last verified signature
+  // The login signature, kept so actions like avatar upload can prove wallet
+  // ownership to the API without a second popup. Public proof, not a secret.
+  proof?: { iso: string; signature: string };
 };
 
 // The message the wallet signs. Timestamped so signatures can't be replayed

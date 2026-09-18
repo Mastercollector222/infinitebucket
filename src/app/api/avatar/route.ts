@@ -7,12 +7,13 @@ import {
   cloudinaryReady,
   uploadAvatar,
 } from "@/lib/cloudinary";
-import { avatarMessage } from "@/lib/auth";
+import { avatarMessage, loginMessage } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SIGNATURE_TTL_MS = 10 * 60 * 1000; // upload proof is fresh for 10 min
+const SIGNATURE_TTL_MS = 10 * 60 * 1000; // dedicated upload proof: 10 min
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // reused login proof: session lifetime
 
 function fail(status: number, error: string) {
   return NextResponse.json({ ok: false, error }, { status });
@@ -43,23 +44,40 @@ export async function POST(req: Request) {
   }
 
   // Verify the upload proof before touching storage — this is what stops
-  // wallet A from writing wallet B's row or public_id.
+  // wallet A from writing wallet B's row or public_id. Accepts a dedicated
+  // avatar proof (10 min) or the stored login proof (session lifetime, 24h).
   let wallet: string;
+  let kind: "avatar" | "login";
   try {
     const checksum = getAddress(address);
-    const ok = await verifyMessage({
-      address: checksum,
-      message: avatarMessage(checksum, iso),
-      signature: signature as `0x${string}`,
-    });
-    if (!ok) return fail(401, "Signature did not match this wallet.");
+    const sig = signature as `0x${string}`;
+    if (
+      await verifyMessage({
+        address: checksum,
+        message: avatarMessage(checksum, iso),
+        signature: sig,
+      })
+    ) {
+      kind = "avatar";
+    } else if (
+      await verifyMessage({
+        address: checksum,
+        message: loginMessage(checksum, iso),
+        signature: sig,
+      })
+    ) {
+      kind = "login";
+    } else {
+      return fail(401, "Signature did not match this wallet.");
+    }
     wallet = checksum.toLowerCase();
   } catch {
     return fail(401, "Invalid wallet proof.");
   }
 
   const signedAt = Date.parse(iso);
-  if (!Number.isFinite(signedAt) || Math.abs(Date.now() - signedAt) > SIGNATURE_TTL_MS) {
+  const ttl = kind === "avatar" ? SIGNATURE_TTL_MS : SESSION_TTL_MS;
+  if (!Number.isFinite(signedAt) || Math.abs(Date.now() - signedAt) > ttl) {
     return fail(401, "Signature is stale — sign again.");
   }
 

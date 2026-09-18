@@ -58,6 +58,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [row, setRow] = useState<UserRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
+  // The verified login signature — reused as an upload proof so avatar
+  // changes don't need a second wallet popup.
+  const proofRef = useRef<{ iso: string; signature: string } | null>(null);
+
+  // Persist the session, keeping the existing proof if this one has none.
+  const persist = useCallback((wallet: string, name: string | null) => {
+    const prior = loadSession();
+    saveSession({
+      wallet,
+      username: name,
+      verifiedAt: Date.now(),
+      proof:
+        proofRef.current ??
+        (prior?.wallet === wallet ? prior.proof : undefined),
+    });
+  }, []);
 
   const fetchUser = useCallback(async (wallet: string): Promise<UserRow | null> => {
     if (!supabase) return null;
@@ -80,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabase) {
         // Supabase not configured — still allow a signed session.
         setUsername(null);
-        saveSession({ wallet, username: null, verifiedAt: Date.now() });
+        persist(wallet, null);
         setStatus("needs_username");
         return;
       }
@@ -102,10 +118,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const name = row?.username ?? null;
       setRow(row);
       setUsername(name);
-      saveSession({ wallet, username: name, verifiedAt: Date.now() });
+      persist(wallet, name);
       setStatus(name ? "ready" : "needs_username");
     },
-    [fetchUser],
+    [fetchUser, persist],
   );
 
   const verify = useCallback(async () => {
@@ -114,10 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     setStatus("signing");
     try {
-      const message = loginMessage(address, new Date().toISOString());
+      const iso = new Date().toISOString();
+      const message = loginMessage(address, iso);
       const signature = await signMessageAsync({ message });
       const ok = await verifyMessage({ address, message, signature });
       if (!ok) throw new Error("Signature did not match this address.");
+      proofRef.current = { iso, signature };
       await applyVerified(address, true);
     } catch (e) {
       const msg = (e as { shortMessage?: string; message?: string }).shortMessage
@@ -217,11 +235,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUsername(trimmed);
       setRow((r) => (r ? { ...r, username: trimmed } : r));
-      saveSession({ wallet, username: trimmed, verifiedAt: Date.now() });
+      persist(wallet, trimmed);
       setStatus("ready");
       return true;
     },
-    [address],
+    [address, persist],
   );
 
   // Profile page save: UPDATE the caller's own row only — never insert.
@@ -246,10 +264,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUsername(p.username);
       setRow((r) => (r ? { ...r, ...p } : r));
-      saveSession({ wallet, username: p.username, verifiedAt: Date.now() });
+      persist(wallet, p.username);
       return null;
     },
-    [address],
+    [address, persist],
   );
 
   // Avatar updates happen server-side (/api/avatar); this just syncs the row.
@@ -259,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(() => {
     clearSession();
+    proofRef.current = null;
     setUsername(null);
     setRow(null);
     setError(null);

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSignMessage } from "wagmi";
 import { useAuth } from "@/components/AuthContext";
 import { Avatar } from "@/components/Avatar";
-import { USERNAME_RE, avatarMessage } from "@/lib/auth";
+import { USERNAME_RE, avatarMessage, loadSession } from "@/lib/auth";
 import {
   BIO_MAX,
   checkBio,
@@ -62,10 +62,20 @@ export default function ProfilePage() {
     }
     setAvatarBusy(true);
     try {
-      const iso = new Date().toISOString();
-      const signature = await signMessageAsync({
-        message: avatarMessage(address, iso),
-      });
+      // Reuse the login signature as the upload proof when we have one —
+      // avoids a second wallet popup. The API route accepts either proof.
+      const prior = loadSession();
+      let iso: string;
+      let signature: string;
+      if (prior?.proof && prior.wallet === address.toLowerCase()) {
+        iso = prior.proof.iso;
+        signature = prior.proof.signature;
+      } else {
+        iso = new Date().toISOString();
+        signature = await signMessageAsync({
+          message: avatarMessage(address, iso),
+        });
+      }
       const form = new FormData();
       form.append("file", file);
       form.append("address", address);
