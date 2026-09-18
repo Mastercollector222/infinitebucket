@@ -82,8 +82,10 @@ export async function POST(req: Request) {
       wallet,
       `data:${file.type};base64,${buffer.toString("base64")}`,
     );
-  } catch {
-    return fail(502, "Upload to Cloudinary failed.");
+  } catch (e) {
+    const msg = (e as { message?: string }).message ?? "unknown";
+    console.error("[avatar] cloudinary upload failed:", msg);
+    return fail(502, `Cloudinary rejected the upload: ${msg}`);
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
