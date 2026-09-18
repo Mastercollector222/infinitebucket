@@ -66,29 +66,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // After a verified signature (or a fresh stored session), sync the row.
+  // SELECT first — an existing row is only touched on `last_seen`; username is
+  // never overwritten by login. (supabase-js upsert defaults missing columns
+  // to NULL on merge, which would wipe the username every sign-in.)
   const applyVerified = useCallback(
     async (addr: `0x${string}`, signatureVerified: boolean) => {
       const wallet = addr.toLowerCase();
-      if (supabase) {
-        if (signatureVerified) {
-          await supabase
-            .from("users")
-            .upsert(
-              { wallet, last_seen: new Date().toISOString() },
-              { onConflict: "wallet" },
-            );
-        }
-        const row = await fetchUser(wallet);
-        const name = row?.username ?? null;
-        setUsername(name);
-        saveSession({ wallet, username: name, verifiedAt: Date.now() });
-        setStatus(name ? "ready" : "needs_username");
-      } else {
+      if (!supabase) {
         // Supabase not configured — still allow a signed session.
         setUsername(null);
         saveSession({ wallet, username: null, verifiedAt: Date.now() });
         setStatus("needs_username");
+        return;
       }
+      let row = await fetchUser(wallet);
+      if (signatureVerified) {
+        const last_seen = new Date().toISOString();
+        if (row) {
+          await supabase.from("users").update({ last_seen }).eq("wallet", wallet);
+        } else {
+          const { error: insErr } = await supabase
+            .from("users")
+            .insert({ wallet, last_seen });
+          if (insErr && insErr.code !== "23505") throw insErr;
+          // Re-select: gets the fresh row, and covers a rare insert race
+          // where another tab created the row between our SELECT and INSERT.
+          row = await fetchUser(wallet);
+        }
+      }
+      const name = row?.username ?? null;
+      setUsername(name);
+      saveSession({ wallet, username: name, verifiedAt: Date.now() });
+      setStatus(name ? "ready" : "needs_username");
     },
     [fetchUser],
   );
@@ -170,10 +179,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setError(null);
       const wallet = address.toLowerCase();
-      const { error: err } = await supabase
+      // Claim the name on the existing row — the login flow created/found it.
+      const { data: updated, error: err } = await supabase
         .from("users")
-        .update({ username: trimmed, last_seen: new Date().toISOString() })
-        .eq("wallet", wallet);
+        .update({ username: trimmed })
+        .eq("wallet", wallet)
+        .select("wallet")
+        .maybeSingle();
       if (err) {
         setError(
           err.code === "23505"
@@ -181,6 +193,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             : `Could not save username: ${err.message}`,
         );
         return false;
+      }
+      if (!updated) {
+        // Row vanished between login and submit — recreate it with the name.
+        const { error: insErr } = await supabase
+          .from("users")
+          .insert({ wallet, username: trimmed });
+        if (insErr) {
+          setError(
+            insErr.code === "23505"
+              ? "That username is taken."
+              : `Could not save username: ${insErr.message}`,
+          );
+          return false;
+        }
       }
       setUsername(trimmed);
       saveSession({ wallet, username: trimmed, verifiedAt: Date.now() });
