@@ -153,10 +153,9 @@ The contract is currently **unverified** — the site never claims it is audited
 
 ## Pages
 
-- `/` — Home (hero, live strip, trade tape, mechanism, token facts, links)
-- `/token` — Contract details, copy CA, add Robinhood Chain
-- `/mechanism` — How the 4% swap fee is split and paid back to holders through BucketShop
-- `/live` — Larger ticker + recent activity feed
+- `/` — Home (hero, live stats row, fee-split grid, engine row, official links)
+- `/profile` — Wallet account (username, bio, socials, avatar)
+- `/u/[username]` — Public read-only profile (balance, bio, socials)
 
 ## Notes
 

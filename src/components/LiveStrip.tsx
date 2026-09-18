@@ -2,16 +2,20 @@
 
 import { useMarketContext } from "./MarketContext";
 import { CountUp } from "./CountUp";
-import { formatUsd, formatPercent, formatNumber, compact } from "@/lib/format";
+import { useChainToken } from "@/hooks/useChainToken";
+import { TOKEN } from "@/lib/constants";
+import { formatUsd, formatPercent, compact } from "@/lib/format";
 
 type Stat = {
   label: string;
   render: () => React.ReactNode;
 };
 
-// Section C: the live stat strip. Skeletons first, then real numbers.
+// The single live stats row. Supply is the on-chain totalSupply read — minted
+// 1B, burns already reduced it.
 export function LiveStrip() {
   const { data, token, loading, stale, lastUpdated } = useMarketContext();
+  const chain = useChainToken();
 
   const change = data?.change24h ?? null;
   const changeTone =
@@ -51,12 +55,6 @@ export function LiveStrip() {
       ),
     },
     {
-      label: "FDV",
-      render: () => (
-        <CountUp value={data?.fdv ?? null} format={(n) => formatUsd(n, { compact: true })} />
-      ),
-    },
-    {
       label: "Holders",
       render: () =>
         token.stats?.holders != null ? (
@@ -66,9 +64,14 @@ export function LiveStrip() {
         ),
     },
     {
-      label: "Txns 24h",
+      label: `Live supply`,
       render: () =>
-        data?.txns24h != null ? formatNumber(data.txns24h) : (
+        chain.totalSupply != null ? (
+          <CountUp
+            value={chain.totalSupply}
+            format={(n) => (n == null ? "—" : `${compact(n)} ${TOKEN.symbol}`)}
+          />
+        ) : (
           <span className="text-[var(--color-muted)]">—</span>
         ),
     },
@@ -77,24 +80,24 @@ export function LiveStrip() {
   return (
     <section className="glass p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-display text-sm font-bold text-[var(--color-chrome)]">
-            Live market
-          </span>
+        <span className="font-display text-sm font-bold text-[var(--color-chrome)]">
+          Live market
+        </span>
+        <div className="flex items-center gap-3">
           {stale && (
             <span className="text-xs text-[var(--color-gold)]">
               last good value · source stale
             </span>
           )}
+          {data?.source && (
+            <span className="text-xs text-[var(--color-muted)]">
+              via {data.source}
+              {lastUpdated ? ` · ${new Date(lastUpdated).toLocaleTimeString()}` : ""}
+            </span>
+          )}
         </div>
-        {data?.source && (
-          <span className="text-xs text-[var(--color-muted)]">
-            via {data.source}
-            {lastUpdated ? ` · ${new Date(lastUpdated).toLocaleTimeString()}` : ""}
-          </span>
-        )}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 lg:grid-cols-6">
         {stats.map((s) => (
           <div key={s.label} className="flex flex-col gap-1">
             <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">

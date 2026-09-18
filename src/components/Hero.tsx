@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { CopyCA } from "./CopyCA";
+import { LINKS } from "@/lib/constants";
 
 // Section B: left typography, right orbiting bucket with metal sheen.
 export function Hero() {
@@ -34,6 +35,22 @@ export function Hero() {
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <CopyCA variant="button" label="Copy CA" />
+          <a
+            href={LINKS.trade}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-metal rounded-xl px-5 py-2.5 text-sm font-semibold"
+          >
+            Buy INFINITY
+          </a>
+          <a
+            href={LINKS.dexscreener}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-xl border border-[var(--color-stroke)] px-5 py-2.5 text-sm font-semibold text-[var(--color-chrome)] transition hover:border-[rgba(196,160,255,0.4)] hover:text-white"
+          >
+            View chart ↗
+          </a>
         </div>
       </motion.div>
 

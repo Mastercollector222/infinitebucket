@@ -1,23 +1,23 @@
-import { LiveStrip } from "@/components/LiveStrip";
 import { Hero } from "@/components/Hero";
+import { LiveStrip } from "@/components/LiveStrip";
 import { FeeSplit } from "@/components/FeeSplit";
-import { FactsRow } from "@/components/FactsRow";
+import { EngineStrip } from "@/components/EngineStrip";
 import { LinksRow } from "@/components/LinksRow";
 
 export default function HomePage() {
   return (
     <div className="flex flex-col gap-12 pb-16 pt-6 sm:gap-14">
-      {/* Single live stats bar under the header */}
-      <LiveStrip />
-
       {/* One hero */}
       <Hero />
+
+      {/* One live stats row */}
+      <LiveStrip />
 
       {/* One fee-split grid */}
       <FeeSplit />
 
-      {/* One facts row */}
-      <FactsRow />
+      {/* One engine row — renders only while the indexer returns real data */}
+      <EngineStrip />
 
       {/* One official-link row */}
       <LinksRow />

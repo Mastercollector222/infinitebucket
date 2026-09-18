@@ -1,10 +1,10 @@
 import { LINKS, SOCIALS } from "@/lib/constants";
 
 const OFFICIAL = [
-  { label: "Uniswap", desc: "Swap · official chart", href: LINKS.trade },
-  { label: "Dexscreener", desc: "USDG v4 chart", href: LINKS.dexscreener },
-  { label: "Bucket Shop", desc: "Launch", href: LINKS.launch },
+  { label: "Uniswap", desc: "Trade INFINITY / USDG", href: LINKS.trade },
+  { label: "Dexscreener", desc: "Official chart · USDG v4", href: LINKS.dexscreener },
   { label: "Blockscout", desc: "Explorer", href: LINKS.blockscoutToken },
+  { label: "Bucket Shop", desc: "Launch page", href: LINKS.launch },
   { label: "X", desc: "@InfinityBucket_", href: SOCIALS.x },
   { label: "Telegram", desc: "InfiniteBucket", href: SOCIALS.telegram },
 ];

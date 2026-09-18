@@ -9,14 +9,6 @@ import { useMarketContext } from "./MarketContext";
 import { formatUsd } from "@/lib/format";
 import { LINKS } from "@/lib/constants";
 
-const NAV_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/token", label: "Token" },
-  { href: "/mechanism", label: "Mechanism" },
-  { href: "/live", label: "Live" },
-  { href: "/profile", label: "Profile" },
-];
-
 export function Nav() {
   const pathname = usePathname();
   const { data, loading } = useMarketContext();
@@ -34,30 +26,10 @@ export function Nav() {
               className="rounded-lg"
               priority
             />
-            <span className="hidden font-display text-lg font-extrabold tracking-tight text-[var(--color-white-soft)] sm:inline">
+            <span className="font-display text-lg font-extrabold tracking-tight text-[var(--color-white-soft)]">
               Infinite<span className="text-chrome">Bucket</span>
             </span>
           </Link>
-
-          <span className="ml-1 hidden rounded-md border border-[var(--color-stroke)] px-2 py-0.5 font-mono text-xs text-[var(--color-amethyst)] md:inline">
-            $INFINITY
-          </span>
-
-          <nav className="ml-4 hidden items-center gap-1 lg:flex">
-            {NAV_LINKS.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                  pathname === l.href
-                    ? "bg-[rgba(28,20,44,0.7)] text-[var(--color-white-soft)]"
-                    : "text-[var(--color-muted)] hover:text-[var(--color-chrome)]"
-                }`}
-              >
-                {l.label}
-              </Link>
-            ))}
-          </nav>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <div className="hidden items-center gap-2 xs:flex">
@@ -70,6 +42,16 @@ export function Nav() {
                 )}
               </span>
             </div>
+            <Link
+              href="/profile"
+              className={`hidden rounded-lg px-3 py-1.5 text-sm transition sm:inline ${
+                pathname === "/profile"
+                  ? "bg-[rgba(28,20,44,0.7)] text-[var(--color-white-soft)]"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-chrome)]"
+              }`}
+            >
+              Profile
+            </Link>
             <WalletButton />
             <a
               href={LINKS.trade}
