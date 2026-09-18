@@ -11,6 +11,10 @@ export const supabase =
 export type UserRow = {
   wallet: string;
   username: string | null;
+  bio: string | null;
+  x_url: string | null;
+  telegram_url: string | null;
+  website_url: string | null;
   created_at: string;
   last_seen: string;
 };

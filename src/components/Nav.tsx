@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: "/token", label: "Token" },
   { href: "/mechanism", label: "Mechanism" },
   { href: "/live", label: "Live" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export function Nav() {

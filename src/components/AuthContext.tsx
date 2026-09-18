@@ -12,6 +12,7 @@ import {
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { verifyMessage } from "viem";
 import { supabase, type UserRow } from "@/lib/supabase";
+import type { ProfileInput } from "@/lib/profile";
 import {
   clearSession,
   loadSession,
@@ -33,10 +34,12 @@ type AuthValue = {
   status: AuthStatus;
   address?: `0x${string}`;
   username: string | null;
+  row: UserRow | null;
   error: string | null;
   connect: () => void;
   verify: () => Promise<void>;
   submitUsername: (u: string) => Promise<boolean>;
+  saveProfile: (p: ProfileInput) => Promise<string | null>;
   disconnect: () => void;
   clearError: () => void;
 };
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [status, setStatus] = useState<AuthStatus>("idle");
   const [username, setUsername] = useState<string | null>(null);
+  const [row, setRow] = useState<UserRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
 
@@ -95,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       const name = row?.username ?? null;
+      setRow(row);
       setUsername(name);
       saveSession({ wallet, username: name, verifiedAt: Date.now() });
       setStatus(name ? "ready" : "needs_username");
@@ -132,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isConnected || !address) {
       setStatus("idle");
       setUsername(null);
+      setRow(null);
       return;
     }
     const wallet = address.toLowerCase();
@@ -209,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       setUsername(trimmed);
+      setRow((r) => (r ? { ...r, username: trimmed } : r));
       saveSession({ wallet, username: trimmed, verifiedAt: Date.now() });
       setStatus("ready");
       return true;
@@ -216,9 +223,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [address],
   );
 
+  // Profile page save: UPDATE the caller's own row only — never insert.
+  const saveProfile = useCallback(
+    async (p: ProfileInput): Promise<string | null> => {
+      if (!address || !supabase) return "Not connected.";
+      const wallet = address.toLowerCase();
+      const { error: err } = await supabase
+        .from("users")
+        .update({
+          username: p.username,
+          bio: p.bio,
+          x_url: p.x_url,
+          telegram_url: p.telegram_url,
+          website_url: p.website_url,
+        })
+        .eq("wallet", wallet);
+      if (err) {
+        return err.code === "23505"
+          ? "That username is taken."
+          : `Could not save profile: ${err.message}`;
+      }
+      setUsername(p.username);
+      setRow((r) => (r ? { ...r, ...p } : r));
+      saveSession({ wallet, username: p.username, verifiedAt: Date.now() });
+      return null;
+    },
+    [address],
+  );
+
   const disconnect = useCallback(() => {
     clearSession();
     setUsername(null);
+    setRow(null);
     setError(null);
     setStatus("idle");
     wagmiDisconnect();
@@ -232,10 +268,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status,
         address,
         username,
+        row,
         error,
         connect,
         verify,
         submitUsername,
+        saveProfile,
         disconnect,
         clearError,
       }}
