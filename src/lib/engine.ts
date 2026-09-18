@@ -88,21 +88,31 @@ export function parseEngineStats(
   };
 }
 
-// Find our token's launch record in the paginated launches list.
+// Find our token's launch record in the launches list. The indexer paginates
+// at 40/page and is 0-indexed: ?page=0 is the first page, j.pages is the count.
 export async function findLaunchRecord(
   fetcher: (url: string) => Promise<Record<string, any>>,
 ): Promise<Record<string, any> | null> {
   const addr = TOKEN.address.toLowerCase();
-  for (let page = 1; page <= 5; page++) {
-    const j = await fetcher(`${IX}/launches${page > 1 ? `?page=${page}` : ""}`);
+  for (let page = 0; page <= 8; page++) {
+    const j = await fetcher(`${IX}/launches${page > 0 ? `?page=${page}` : ""}`);
     const arr: Record<string, any>[] = Array.isArray(j)
       ? j
-      : j.items ?? j.launches ?? j.data ?? Object.values(j);
-    const rec = arr.find(
-      (x) => typeof x?.token === "string" && x.token.toLowerCase() === addr,
-    );
+      : j.launches ?? j.items ?? j.data ?? Object.values(j);
+    const rec = Array.isArray(arr)
+      ? arr.find(
+          (x) => typeof x?.token === "string" && x.token.toLowerCase() === addr,
+        )
+      : undefined;
     if (rec) return rec;
-    if (!Array.isArray(arr) || arr.length === 0) break;
+    const totalPages = typeof j.pages === "number" ? j.pages : null;
+    if (
+      totalPages != null
+        ? page + 1 >= totalPages
+        : !Array.isArray(arr) || arr.length === 0
+    ) {
+      break;
+    }
   }
   return null;
 }
