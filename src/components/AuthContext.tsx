@@ -1,0 +1,226 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
+import { verifyMessage } from "viem";
+import { supabase, type UserRow } from "@/lib/supabase";
+import {
+  clearSession,
+  loadSession,
+  loginMessage,
+  saveSession,
+  sessionFresh,
+  USERNAME_RE,
+} from "@/lib/auth";
+
+export type AuthStatus =
+  | "idle"
+  | "connecting"
+  | "needs_verify"
+  | "signing"
+  | "needs_username"
+  | "ready";
+
+type AuthValue = {
+  status: AuthStatus;
+  address?: `0x${string}`;
+  username: string | null;
+  error: string | null;
+  connect: () => void;
+  verify: () => Promise<void>;
+  submitUsername: (u: string) => Promise<boolean>;
+  disconnect: () => void;
+  clearError: () => void;
+};
+
+const AuthContext = createContext<AuthValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const { address, isConnected } = useAccount();
+  const { connectAsync, connectors } = useConnect();
+  const { disconnect: wagmiDisconnect } = useDisconnect();
+  const { signMessageAsync } = useSignMessage();
+
+  const [status, setStatus] = useState<AuthStatus>("idle");
+  const [username, setUsername] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const busy = useRef(false);
+
+  const fetchUser = useCallback(async (wallet: string): Promise<UserRow | null> => {
+    if (!supabase) return null;
+    const { data, error: err } = await supabase
+      .from("users")
+      .select("*")
+      .eq("wallet", wallet)
+      .maybeSingle();
+    if (err) throw err;
+    return (data as UserRow | null) ?? null;
+  }, []);
+
+  // After a verified signature (or a fresh stored session), sync the row.
+  const applyVerified = useCallback(
+    async (addr: `0x${string}`, signatureVerified: boolean) => {
+      const wallet = addr.toLowerCase();
+      if (supabase) {
+        if (signatureVerified) {
+          await supabase
+            .from("users")
+            .upsert(
+              { wallet, last_seen: new Date().toISOString() },
+              { onConflict: "wallet" },
+            );
+        }
+        const row = await fetchUser(wallet);
+        const name = row?.username ?? null;
+        setUsername(name);
+        saveSession({ wallet, username: name, verifiedAt: Date.now() });
+        setStatus(name ? "ready" : "needs_username");
+      } else {
+        // Supabase not configured — still allow a signed session.
+        setUsername(null);
+        saveSession({ wallet, username: null, verifiedAt: Date.now() });
+        setStatus("needs_username");
+      }
+    },
+    [fetchUser],
+  );
+
+  const verify = useCallback(async () => {
+    if (!address || busy.current) return;
+    busy.current = true;
+    setError(null);
+    setStatus("signing");
+    try {
+      const message = loginMessage(address, new Date().toISOString());
+      const signature = await signMessageAsync({ message });
+      const ok = await verifyMessage({ address, message, signature });
+      if (!ok) throw new Error("Signature did not match this address.");
+      await applyVerified(address, true);
+    } catch (e) {
+      const msg = (e as { shortMessage?: string; message?: string }).shortMessage
+        ?? (e as Error).message;
+      setError(
+        /reject|denied|cancel/i.test(msg)
+          ? "Signature request rejected."
+          : `Sign-in failed: ${msg}`,
+      );
+      setStatus("needs_verify");
+    } finally {
+      busy.current = false;
+    }
+  }, [address, signMessageAsync, applyVerified]);
+
+  // Wallet connected → resume fresh session or request a signature.
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setStatus("idle");
+      setUsername(null);
+      return;
+    }
+    const wallet = address.toLowerCase();
+    const session = loadSession();
+    if (session && session.wallet === wallet && sessionFresh(session)) {
+      // Fresh session — refresh username from the DB in the background.
+      applyVerified(address, false).catch(() => setStatus("ready"));
+      return;
+    }
+    if (status !== "signing" && status !== "needs_username" && status !== "ready") {
+      verify();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address]);
+
+  const connect = useCallback(() => {
+    setError(null);
+    const injected = connectors[0];
+    if (!injected) {
+      setError("No injected wallet found. Install MetaMask or Rabby.");
+      return;
+    }
+    setStatus("connecting");
+    connectAsync({ connector: injected }).catch((e) => {
+      setError(
+        /reject|denied|cancel/i.test((e as Error).message)
+          ? "Connection request rejected."
+          : `Connect failed: ${(e as Error).message}`,
+      );
+      setStatus("idle");
+    });
+  }, [connectAsync, connectors]);
+
+  const submitUsername = useCallback(
+    async (u: string): Promise<boolean> => {
+      const trimmed = u.trim();
+      if (!USERNAME_RE.test(trimmed)) {
+        setError("3–16 chars: letters, numbers, underscore only.");
+        return false;
+      }
+      if (!address) return false;
+      if (!supabase) {
+        setError("Account storage is not configured.");
+        return false;
+      }
+      setError(null);
+      const wallet = address.toLowerCase();
+      const { error: err } = await supabase
+        .from("users")
+        .update({ username: trimmed, last_seen: new Date().toISOString() })
+        .eq("wallet", wallet);
+      if (err) {
+        setError(
+          err.code === "23505"
+            ? "That username is taken."
+            : `Could not save username: ${err.message}`,
+        );
+        return false;
+      }
+      setUsername(trimmed);
+      saveSession({ wallet, username: trimmed, verifiedAt: Date.now() });
+      setStatus("ready");
+      return true;
+    },
+    [address],
+  );
+
+  const disconnect = useCallback(() => {
+    clearSession();
+    setUsername(null);
+    setError(null);
+    setStatus("idle");
+    wagmiDisconnect();
+  }, [wagmiDisconnect]);
+
+  const clearError = useCallback(() => setError(null), []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        status,
+        address,
+        username,
+        error,
+        connect,
+        verify,
+        submitUsername,
+        disconnect,
+        clearError,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}

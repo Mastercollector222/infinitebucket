@@ -1,17 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useAccount,
-  useChainId,
-  useConnect,
-  useDisconnect,
-  useSwitchChain,
-  useWatchAsset,
-} from "wagmi";
+import { useChainId, useSwitchChain, useWatchAsset } from "wagmi";
 import { CHAIN, TOKEN, SITE_URL } from "@/lib/constants";
 import { truncateAddress, compact } from "@/lib/format";
 import { useInfinityBalance } from "@/hooks/useInfinityBalance";
+import { useAuth } from "./AuthContext";
 
 const addChainParameter = {
   chainName: CHAIN.name,
@@ -20,16 +14,13 @@ const addChainParameter = {
   blockExplorerUrls: [CHAIN.explorer],
 };
 
-// Injected-only connect (MetaMask / browser wallet). No WalletConnect, so no
-// Verify API "suspected phishing" warnings.
+// Wallet-only login: connect injected wallet → sign → verify → username.
 export function WalletButton() {
-  const { isConnected } = useAccount();
+  const { status, connect, verify, error } = useAuth();
   const chainId = useChainId();
-  const { connect, connectors, isPending: connecting } = useConnect();
   const { switchChain, isPending: switching } = useSwitchChain();
-
-  const injected = connectors[0];
-  const wrongNetwork = isConnected && chainId !== CHAIN.id;
+  const connected = status !== "idle" && status !== "connecting";
+  const wrongNetwork = connected && chainId !== CHAIN.id;
 
   if (wrongNetwork) {
     return (
@@ -47,25 +38,57 @@ export function WalletButton() {
     );
   }
 
-  if (!isConnected) {
+  if (status === "needs_verify") {
+    return (
+      <div className="inline-flex flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={() => verify()}
+          className="btn-metal rounded-xl px-4 py-2.5 text-sm font-semibold"
+        >
+          Sign in
+        </button>
+        {error && <span className="max-w-[220px] text-right text-xs text-[var(--color-sell)]">{error}</span>}
+      </div>
+    );
+  }
+
+  if (status === "connecting" || status === "signing" || status === "needs_username") {
     return (
       <button
         type="button"
-        disabled={connecting || !injected}
-        onClick={() => injected && connect({ connector: injected })}
-        className="btn-ghost rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-60"
+        disabled
+        className="btn-ghost rounded-xl px-4 py-2.5 text-sm font-medium opacity-70"
       >
-        {connecting ? "Connecting…" : "Connect"}
+        {status === "connecting"
+          ? "Connecting…"
+          : status === "signing"
+            ? "Check wallet…"
+            : "Set username…"}
       </button>
     );
   }
 
-  return <ConnectedPill />;
+  if (status === "ready") {
+    return <ConnectedPill />;
+  }
+
+  return (
+    <div className="inline-flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={connect}
+        className="btn-ghost rounded-xl px-4 py-2.5 text-sm font-medium"
+      >
+        Connect
+      </button>
+      {error && <span className="max-w-[220px] text-right text-xs text-[var(--color-sell)]">{error}</span>}
+    </div>
+  );
 }
 
 function ConnectedPill() {
-  const { address } = useAccount();
-  const { disconnect } = useDisconnect();
+  const { address, username, disconnect } = useAuth();
   const { balance, isLoading } = useInfinityBalance();
   const { watchAsset } = useWatchAsset();
   const [added, setAdded] = useState(false);
@@ -74,12 +97,14 @@ function ConnectedPill() {
     <div className="inline-flex items-center gap-1.5">
       <button
         type="button"
-        onClick={() => disconnect()}
+        onClick={disconnect}
         title="Disconnect"
         className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-stroke)] bg-[rgba(28,20,44,0.6)] px-3 py-2 text-sm transition hover:border-[rgba(196,160,255,0.35)]"
       >
         <span className="live-dot" />
-        <span className="font-mono text-[var(--color-chrome)]">{truncateAddress(address)}</span>
+        <span className="font-mono text-[var(--color-chrome)]">
+          {username ?? truncateAddress(address)}
+        </span>
         <span className="hidden text-[var(--color-muted)] sm:inline">
           {isLoading ? "…" : balance != null ? `${compact(balance)} ${TOKEN.symbol}` : "—"}
         </span>

@@ -4,7 +4,8 @@
 export const TOKEN = {
   name: "InfiniteBucket",
   symbol: "INFINITY",
-  address: "0xbd305151d3d7eb612d3969e9fa05315cd47374e4" as const,
+  address: (process.env.NEXT_PUBLIC_TOKEN ||
+    "0xbd305151d3d7eb612d3969e9fa05315cd47374e4") as `0x${string}`,
   decimals: 18,
   totalSupply: 1_000_000_000, // fixed, 1B
   standard: "ERC-20",
@@ -17,13 +18,17 @@ export const QUOTE = {
   decimals: 6, // NEVER treat as 18
 } as const;
 
+const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 4663;
+
 export const CHAIN = {
-  id: 4663,
-  idHex: "0x1237",
+  id: chainId,
+  idHex: `0x${chainId.toString(16)}` as `0x${string}`,
   testnetId: 46630,
   name: "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
+  rpcUrl:
+    process.env.NEXT_PUBLIC_RPC ||
+    "https://rpc.mainnet.chain.robinhood.com",
   explorer: "https://robinhoodchain.blockscout.com",
 } as const;
 
