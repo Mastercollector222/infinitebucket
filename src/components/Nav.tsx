@@ -42,16 +42,22 @@ export function Nav() {
                 )}
               </span>
             </div>
-            <Link
-              href="/profile"
-              className={`hidden rounded-lg px-3 py-1.5 text-sm transition sm:inline ${
-                pathname === "/profile"
-                  ? "bg-[rgba(28,20,44,0.7)] text-[var(--color-white-soft)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-chrome)]"
-              }`}
-            >
-              Profile
-            </Link>
+            {[
+              { href: "/leaderboard", label: "Leaderboard" },
+              { href: "/profile", label: "Profile" },
+            ].map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`hidden rounded-lg px-3 py-1.5 text-sm transition sm:inline ${
+                  pathname === l.href
+                    ? "bg-[rgba(28,20,44,0.7)] text-[var(--color-white-soft)]"
+                    : "text-[var(--color-muted)] hover:text-[var(--color-chrome)]"
+                }`}
+              >
+                {l.label}
+              </Link>
+            ))}
             <WalletButton />
             <a
               href={LINKS.trade}

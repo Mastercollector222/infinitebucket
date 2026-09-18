@@ -9,31 +9,39 @@ import { supabase, type UserRow } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { erc20Abi } from "@/lib/abi";
-import { CHAIN, LINKS, TOKEN } from "@/lib/constants";
+import { CHAIN, TOKEN } from "@/lib/constants";
 import { compact, truncateAddress } from "@/lib/format";
 
-// Public read-only profile for a claimed username. Edit affordance only
-// appears when the connected wallet owns the row.
+const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
+
+// Public read-only profile for a claimed username — or, when the param is a
+// wallet address, a "not claimed" wallet card. Edit affordance only appears
+// when the connected wallet owns the row.
 export default function PublicProfilePage() {
   const params = useParams<{ username: string }>();
   const name = decodeURIComponent(params.username ?? "");
+  const isWallet = WALLET_RE.test(name);
   const { address } = useAuth();
 
   const { data: row, isLoading } = useQuery({
-    queryKey: ["profile", name],
+    queryKey: ["profile", name.toLowerCase()],
     enabled: Boolean(supabase && name),
     queryFn: async (): Promise<UserRow | null> => {
-      const { data, error } = await supabase!
-        .from("users")
-        .select("*")
-        .eq("username", name)
-        .maybeSingle();
+      const q = supabase!.from("users").select("*");
+      const { data, error } = isWallet
+        ? await q.eq("wallet", name.toLowerCase()).maybeSingle()
+        : await q.eq("username", name).maybeSingle();
       if (error) throw error;
       return (data as UserRow | null) ?? null;
     },
   });
 
-  const wallet = row?.wallet as `0x${string}` | undefined;
+  // Wallet param with no claimed username renders the not-claimed card.
+  const unclaimedWallet = isWallet && !isLoading && !row?.username;
+  const wallet = (unclaimedWallet
+    ? name.toLowerCase()
+    : row?.wallet) as `0x${string}` | undefined;
+
   const { data: balanceRaw } = useReadContract({
     address: TOKEN.address,
     abi: erc20Abi,
@@ -52,6 +60,44 @@ export default function PublicProfilePage() {
     <div className="mx-auto max-w-xl py-14 pb-28 lg:pb-16">
       {isLoading ? (
         <div className="glass h-64 animate-pulse" />
+      ) : unclaimedWallet ? (
+        <div className="glass flex flex-col gap-5 p-6 sm:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Avatar url={null} wallet={wallet} username={null} size={96} />
+              <a
+                href={`${CHAIN.explorer}/address/${wallet}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-block font-mono text-sm text-[var(--color-amethyst)] transition hover:text-[var(--color-chrome)]"
+              >
+                {truncateAddress(wallet, 8)}
+              </a>
+              <p className="mt-1 text-xs uppercase tracking-wide text-[var(--color-muted)]">
+                Not claimed
+              </p>
+            </div>
+            {isOwner && (
+              <Link
+                href="/profile"
+                className="btn-ghost rounded-xl px-4 py-2 text-sm font-medium"
+              >
+                Claim profile
+              </Link>
+            )}
+          </div>
+          <p className="text-sm leading-relaxed text-[var(--color-muted)]">
+            This wallet hasn&apos;t picked a username yet.
+          </p>
+          <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
+            <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
+              {TOKEN.symbol} balance
+            </span>
+            <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
+              {balance != null ? compact(balance) : "—"}
+            </span>
+          </div>
+        </div>
       ) : !row ? (
         <div className="glass p-8 text-center">
           <h1 className="font-display text-2xl font-bold text-[var(--color-white-soft)]">
