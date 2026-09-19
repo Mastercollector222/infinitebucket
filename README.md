@@ -45,7 +45,7 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SITE_URL` | No | Canonical URL for metadata/OG (defaults to infinitebucket.net). |
 | `NEXT_PUBLIC_X_URL` | No | Override for the X link (defaults to `https://x.com/InfinityBucket_`). |
 | `NEXT_PUBLIC_TELEGRAM_URL` | No | Override for the Telegram link (defaults to `https://t.me/InfiniteBucket`). |
-| `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1789948800` = 21 Sep 2026 00:00 UTC). Server-side only. |
+| `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1790121600` = 23 Sep 2026 00:00 UTC). Server-side only. |
 | `GIVEAWAY_PAYOUT_TX` | No | Set to the 50 USDG payout tx hash after the creator sends it — the page links it. Server-side only. |
 
 ## Database (run once in the Supabase SQL editor)
@@ -119,19 +119,25 @@ deposits.
 - Gate: `balanceOf >= 5,000,000 INFINITY` at the snapshot. Excluded: the
   Uniswap v4 PoolManager, zero/dead addresses, and the creator wallet
   (`0x7c26…6006`).
-- **Cutoff: 21 Sep 2026 00:00 UTC = Unix `1789948800`.** ⚠️ The original
-  spec wrote this as `1758412800` — that value is *2025*-09-21 (one year
-  early). Confirm whether "5:00 PM Mountain" meant MDT (UTC-6, → 23:00 UTC)
-  or MST (UTC-7, → 00:00 UTC); override with `GIVEAWAY_CUTOFF_TS` if it
-  should be `1789945200` (23:00 UTC) instead.
+- **Cutoff: 23 Sep 2026 00:00 UTC = Unix `1790121600`.** ⚠️ The original
+  spec wrote `1758412800` — that value is *2025* (one year early). Mountain
+  time is also ambiguous: MDT (UTC-6) → 23:00 UTC vs MST (UTC-7) → 00:00
+  UTC. We implement 00:00 UTC; override with `GIVEAWAY_CUTOFF_TS=1790118000`
+  if the intent was 23:00 UTC (5PM MDT).
 - Before cutoff: countdown + live ≥5M holder estimate (not the official
   list).
-- After cutoff: `/api/giveaway` binary-searches the public RPC for the last
-  block `<= cutoff` (snapshot block), reads each holder's `balanceOf` **at
-  that block** via `eth_call`, filters eligible, then
+- After cutoff: `computeGiveaway()` (`src/lib/giveaway.ts`) binary-searches
+  the public RPC for the last block `<= cutoff` (snapshot block), then
+  **reconstructs balances at that block** by walking back every Transfer
+  log between snapshot+1 and the indexer's block — the public RPC prunes
+  historical state, so archive `eth_call` is unavailable; log-replay is
+  exact for any wallet that held or moved INFINITY. Then
   `winner = uint(block.hash) mod eligible.length` — the math is printed on
-  the page. Holder set comes from the launch indexer; a wallet that fully
-  exits before it can be indexed is the only miss case.
+  the page.
+- The page calls `/api/giveaway` first; if the host can't reach the
+  indexer (datacenter IP block), it computes the same result directly in
+  the browser — indexer + RPC are CORS-open (same pattern as the engine
+  fallback). The server path caches 60s before / 6h after cutoff.
 - After the creator sends the 50 USDG, set `GIVEAWAY_PAYOUT_TX=<tx hash>`
   in env and the page links it. Server-side only (no `NEXT_PUBLIC_`).
 

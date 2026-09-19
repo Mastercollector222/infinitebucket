@@ -6,39 +6,34 @@ import { useQuery } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { CopyCA } from "@/components/CopyCA";
 import { CHAIN, LINKS, TOKEN } from "@/lib/constants";
+import { computeGiveaway, type GiveawayBody } from "@/lib/giveaway";
 import { compact, formatNumber, truncateAddress } from "@/lib/format";
 
 type Entry = {
+  index?: number;
   address: string;
   balance: number;
   username?: string | null;
   avatar_url?: string | null;
-  index?: number;
-};
-
-type GiveawayData = {
-  phase: "before" | "after";
-  cutoffTs: number;
-  gate: number;
-  estimate?: Entry[];
-  snapshotBlock?: { number: number; hash: string | null; ts: number | null };
-  eligible?: Entry[];
-  winner?: { index: number; address: string; hashUint: string; mod: number } | null;
-  approximate?: boolean;
-  payoutTx?: string | null;
-  ok: boolean;
-  error?: string;
 };
 
 const PAGE = 10;
 
 export default function RewardPage() {
-  const { data, isLoading } = useQuery<GiveawayData>({
+  const { data, isLoading } = useQuery<GiveawayBody>({
     queryKey: ["giveaway"],
-    queryFn: async () => {
-      const res = await fetch("/api/giveaway", { cache: "no-store" });
-      if (!res.ok) throw new Error(`giveaway ${res.status}`);
-      return (await res.json()) as GiveawayData;
+    queryFn: async (): Promise<GiveawayBody> => {
+      // Server proxy first (shared cache); if the host can't reach the
+      // indexer, compute directly in the browser — indexer + RPC are
+      // CORS-open. Same pattern as the engine fallback.
+      try {
+        const res = await fetch("/api/giveaway", { cache: "no-store" });
+        const json = (await res.json()) as GiveawayBody;
+        if (res.ok && json.ok) return json;
+      } catch {
+        /* proxy unreachable — compute directly below */
+      }
+      return computeGiveaway();
     },
     refetchInterval: 60_000,
   });
@@ -57,7 +52,7 @@ export default function RewardPage() {
         No deposit. We read the chain. One winner. 50 USDG.
       </p>
       <p className="mt-1 text-sm leading-relaxed text-[var(--color-muted)]">
-        Cutoff: 20 Sep 2026, 5:00 PM Mountain Standard Time (21 Sep 2026 00:00
+        Cutoff: 22 Sep 2026, 5:00 PM Mountain Standard Time (23 Sep 2026 00:00
         UTC).
       </p>
 
