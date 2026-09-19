@@ -103,7 +103,7 @@ function ConnectedPill() {
         className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-stroke)] bg-[rgba(28,20,44,0.6)] py-1 pl-1 pr-3 text-sm transition hover:border-[rgba(196,160,255,0.35)]"
       >
         <Avatar url={row?.avatar_url} wallet={address} username={username} size={40} />
-        <span className="font-mono text-[var(--color-chrome)]">
+        <span className="hidden font-mono text-[var(--color-chrome)] sm:inline">
           {username ?? truncateAddress(address)}
         </span>
         <span className="hidden text-[var(--color-muted)] sm:inline">
