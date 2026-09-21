@@ -10,6 +10,7 @@ import { useMarketContext } from "./MarketContext";
 import { WalletButton } from "./WalletButton";
 
 const MENU_LINKS = [
+  { href: "/shop", label: "Shop" },
   { href: "/reward-the-holders", label: "Reward the Holders" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/profile", label: "Profile" },

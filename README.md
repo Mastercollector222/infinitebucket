@@ -34,7 +34,7 @@ cp .env.example .env.local
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes (accounts) | Supabase project URL for wallet accounts. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes (accounts) | Publishable anon key. No service_role anywhere. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes (accounts) | Publishable anon key. Used for public reads + `public.users` writes. |
 | `CLOUDINARY_CLOUD_NAME` | Yes (avatars) | Cloudinary cloud name (server-side only). |
 | `CLOUDINARY_API_KEY` | Yes (avatars) | Cloudinary API key (server-side only). |
 | `CLOUDINARY_API_SECRET` | Yes (avatars) | Cloudinary API secret — **never** prefix with `NEXT_PUBLIC_`. |
@@ -47,6 +47,9 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_TELEGRAM_URL` | No | Override for the Telegram link (defaults to `https://t.me/InfiniteBucket`). |
 | `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1790121600` = 23 Sep 2026 00:00 UTC). Server-side only. |
 | `GIVEAWAY_PAYOUT_TX` | No | Set to the 50 USDG payout tx hash after the creator sends it — the page links it. Server-side only. |
+| `NEXT_PUBLIC_SHOP_WALLET` | Yes (shop) | Wallet that receives shop payments — shown on the checkout screen. |
+| `NEXT_PUBLIC_ADMIN_WALLETS` | Yes (admin) | Comma-separated lowercase admin wallets. Public list; the signature check in `/api/admin/shop` is the real gate. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes (shop) | Service-role key — **server only, never `NEXT_PUBLIC_`**. All `shop_*` writes are mediated by signature-verified API routes; RLS denies anon writes. |
 
 ## Database (run once in the Supabase SQL editor)
 
@@ -141,6 +144,39 @@ deposits.
 - After the creator sends the 50 USDG, set `GIVEAWAY_PAYOUT_TX=<tx hash>`
   in env and the page links it. Server-side only (no `NEXT_PUBLIC_`).
 
+### Shop (`/shop`) + admin (`/admin/shop`)
+
+Holder-gated merch store. **Setup:** run `supabase/shop.sql` once in the
+Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
+`shop_orders`, RLS, and seeds the tiers + two coming-soon products), then set
+`NEXT_PUBLIC_SHOP_WALLET`, `NEXT_PUBLIC_ADMIN_WALLETS`, and
+`SUPABASE_SERVICE_ROLE_KEY`.
+
+- Gate: `balanceOf(wallet) >= shop_min_tokens` (settings table, default
+  1,000,000). Under the minimum the page shows a lock card with the
+  requirement, the current balance, and the official Uniswap Buy link.
+- Discounts: highest qualifying `shop_tiers` row applies (seeded
+  1M→0% / 5M→5% / 10M→10% / 25M→20%).
+- Pricing: list price in USDG; amount due is converted to $INFINITY at the
+  live pair price (`/api/shop/quote`, GeckoTerminal quote-token price →
+  Dexscreener fallback, 30s cache). The server recomputes the discount and
+  amount from the wallet's on-chain balance at order time — nothing the
+  client sends is trusted.
+- Checkout: create order → send exactly `infinity_raw_due` $INFINITY to
+  `NEXT_PUBLIC_SHOP_WALLET` → paste the tx hash → the API verifies on
+  Blockscout (to=shop wallet, from=buyer, INFINITY, amount ≥ due, tx not
+  already used) → `paid_pending_ship`. No approvals, no custody contract —
+  the site never pulls tokens.
+- Admin: `/admin/shop` is gated by `NEXT_PUBLIC_ADMIN_WALLETS` + a signed
+  login nonce (same signature pattern as profiles). Manage min tokens,
+  tiers, products (CRUD), and mark orders shipped with a tracking note.
+- Access model: `shop_tiers`/`shop_products`/`shop_settings` are public-read
+  via RLS. `shop_orders` has no anon access — all writes and order reads go
+  through `/api/shop/orders` and `/api/admin/shop`, which verify the wallet
+  signature and write with the service-role key (there is no Supabase Auth
+  JWT, so RLS can't express "own wallet" — signature-gated API routes are
+  the strict equivalent).
+
 ## Run
 
 ```bash
@@ -187,6 +223,8 @@ The contract is currently **unverified** — the site never claims it is audited
 
 - `/` — Home (hero, live stats row, fee-split grid, engine row, official links)
 - `/leaderboard` — Top 50 on-chain holders joined to claimed profiles
+- `/shop` — Holder-gated merch store (tiers, USDG pricing, $INFINITY payment)
+- `/admin/shop` — Shop admin (admin wallets only, signature-gated)
 - `/reward-the-holders` — Read-only giveaway: snapshot countdown, eligibility, winner
 - `/profile` — Wallet account (username, bio, socials, avatar)
 - `/u/[username]` — Public read-only profile (balance, bio, socials, payouts)
