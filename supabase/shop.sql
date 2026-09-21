@@ -77,6 +77,21 @@ create policy shop_products_read on public.shop_products for select using (true)
 -- No anon insert/update/delete policies on any shop table, and no anon
 -- select on shop_orders: writes + order reads go through the signed API.
 
+-- Table-level GRANTs. RLS still controls row access — these grant the API
+-- roles their base privileges (default privileges don't always cover
+-- tables created in the SQL editor; without them PostgREST returns
+-- "permission denied for table shop_orders").
+grant select on table
+  public.shop_settings, public.shop_tiers, public.shop_products
+  to anon, authenticated;
+
+grant all on table
+  public.shop_settings, public.shop_tiers, public.shop_products, public.shop_orders
+  to service_role;
+
+-- Identity columns own sequences — the service role needs USAGE to insert.
+grant usage, select on all sequences in schema public to service_role;
+
 -- Seed.
 insert into public.shop_settings (key, value) values
   ('shop_min_tokens', '1000000')
