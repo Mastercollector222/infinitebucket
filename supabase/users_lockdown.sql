@@ -12,6 +12,11 @@ drop policy if exists users_insert on public.users;
 drop policy if exists users_update on public.users;
 -- users_select_public stays as-is (read-only).
 
+-- The service role is now the ONLY writer (via /api/profile + /api/avatar)
+-- — it needs an explicit table grant or PostgREST returns
+-- "permission denied for table users".
+grant all on table public.users to service_role;
+
 -- 2) Atomic stock decrement, called at payment verification. Returns true
 --    only when the row existed with enough stock — Postgres serializes the
 --    row update, so two concurrent payments can't oversell the last unit.
