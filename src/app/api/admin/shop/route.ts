@@ -84,9 +84,13 @@ export async function POST(req: Request) {
         label: str(body.label, 60),
         sort: Math.round(num(body.sort) ?? 0),
       };
+      // id is GENERATED ALWAYS AS IDENTITY — explicit values only work via
+      // UPDATE, never INSERT/upsert.
       const id = num(body.id);
-      if (id != null) row.id = id;
-      const { error } = await sb.from("shop_tiers").upsert(row);
+      const { error } =
+        id != null
+          ? await sb.from("shop_tiers").update(row).eq("id", id)
+          : await sb.from("shop_tiers").insert(row);
       if (error) return fail(502, error.message);
       return NextResponse.json({ ok: true });
     }
@@ -145,8 +149,10 @@ export async function POST(req: Request) {
         row.min_infinity_tokens = Math.floor(min_infinity_tokens);
       }
       const id = num(body.id);
-      if (id != null) row.id = id;
-      const { error } = await sb.from("shop_products").upsert(row);
+      const { error } =
+        id != null
+          ? await sb.from("shop_products").update(row).eq("id", id)
+          : await sb.from("shop_products").insert(row);
       if (error) return fail(502, error.message);
       return NextResponse.json({ ok: true });
     }
