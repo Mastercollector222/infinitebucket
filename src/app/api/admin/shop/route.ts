@@ -91,15 +91,23 @@ export async function POST(req: Request) {
       if (price_usdg == null || price_usdg < 0) return fail(400, "Bad price.");
       if (stock == null || stock < 0) return fail(400, "Bad stock.");
       const image_url = str(body.image_url, 500);
+      const min_infinity_tokens = num(body.min_infinity_tokens);
+      if (min_infinity_tokens != null && min_infinity_tokens < 0) {
+        return fail(400, "min_infinity_tokens must be >= 0.");
+      }
       const row: Record<string, unknown> = {
         title,
         blurb: str(body.blurb, 500),
+        description: str(body.description, 5000) || null,
         image_url: image_url || null,
         price_usdg,
         stock: Math.round(stock),
         active: Boolean(body.active),
         sort: Math.round(num(body.sort) ?? 0),
       };
+      if (min_infinity_tokens != null) {
+        row.min_infinity_tokens = Math.floor(min_infinity_tokens);
+      }
       const id = num(body.id);
       if (id != null) row.id = id;
       const { error } = await sb.from("shop_products").upsert(row);

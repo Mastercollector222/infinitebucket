@@ -154,9 +154,17 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
 `NEXT_PUBLIC_SHOP_WALLET`, `NEXT_PUBLIC_ADMIN_WALLETS`, and
 `SUPABASE_SERVICE_ROLE_KEY`.
 
-- Gate: `balanceOf(wallet) >= shop_min_tokens` (settings table, default
-  1,000,000). Under the minimum the page shows a lock card with the
-  requirement, the current balance, and the official Uniswap Buy link.
+- Catalog: public — every visitor sees every product; logged-out users get
+  "Connect to add". Product cards link to `/shop/[id]` detail pages (large
+  image, full `description`, price, hold requirement, balance vs
+  requirement, discount preview, CTA).
+- Per-item gate: `shop_products.min_infinity_tokens` (human units, default
+  `0` = any connected wallet can buy). Under the requirement the card and
+  detail page stay visible but Add-to-cart is disabled with a
+  "Hold {n} $INFINITY" badge + Buy CTA. The server re-checks the live
+  on-chain balance at order time — the client badge is UX only. (The old
+  store-wide `shop_min_tokens` setting is legacy; the storefront no longer
+  locks browsing.)
 - Discounts: highest qualifying `shop_tiers` row applies (seeded
   1M→0% / 5M→5% / 10M→10% / 25M→20%).
 - Pricing: list price in USDG; amount due is converted to $INFINITY at the
@@ -186,10 +194,12 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
   leaderboard, or any public surface.
 - Admin: `/admin/shop` is gated by `NEXT_PUBLIC_ADMIN_WALLETS` + a signed
   login nonce (same signature pattern as profiles). Manage min tokens,
-  tiers, products (CRUD), view order items + (per-order, signed) shipping
-  address, and mark orders shipped with a tracking note.
-- Migrations: `supabase/shop.sql` then `supabase/shop_cart.sql` (cart +
-  shipments + new order statuses — safe to re-run).
+  tiers, products (CRUD — incl. `description` and `min_infinity_tokens`
+  per-item gate), view order items + (per-order, signed) shipping address,
+  and mark orders shipped with a tracking note.
+- Migrations: `supabase/shop.sql`, then `supabase/shop_cart.sql` (cart +
+  shipments + new order statuses), then `supabase/shop_per_item.sql`
+  (per-item gates + descriptions). All safe to re-run.
 - Access model: `shop_tiers`/`shop_products`/`shop_settings` are public-read
   via RLS. `shop_orders` has no anon access — all writes and order reads go
   through `/api/shop/orders` and `/api/admin/shop`, which verify the wallet

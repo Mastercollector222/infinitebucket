@@ -343,9 +343,11 @@ const emptyProduct = {
   id: 0,
   title: "",
   blurb: "",
+  description: "",
   image_url: "",
   price_usdg: "",
   stock: "0",
+  min_infinity_tokens: "0",
   active: false,
   sort: "0",
 };
@@ -370,9 +372,11 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
       ...(form.id ? { id: form.id } : {}),
       title: form.title,
       blurb: form.blurb,
+      description: form.description,
       image_url: form.image_url,
       price_usdg: Number(form.price_usdg),
       stock: Number(form.stock),
+      min_infinity_tokens: Number(form.min_infinity_tokens) || 0,
       active: form.active,
       sort: Number(form.sort) || 0,
     });
@@ -406,9 +410,17 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
             <input className={input} placeholder="Sort" inputMode="numeric" value={form.sort}
               onChange={(e) => setForm({ ...form, sort: e.target.value })} />
           </div>
-          <textarea className={`${input} sm:col-span-2`} placeholder="Blurb" rows={2}
+          <input className={input} inputMode="numeric"
+            placeholder="Min $INFINITY to buy (0 = any connected wallet)"
+            value={form.min_infinity_tokens}
+            onChange={(e) => setForm({ ...form, min_infinity_tokens: e.target.value })} />
+          <textarea className={input} placeholder="Blurb (grid card teaser)" rows={2}
             value={form.blurb}
             onChange={(e) => setForm({ ...form, blurb: e.target.value })} />
+          <textarea className={`${input} sm:col-span-2`} rows={4}
+            placeholder="Description (detail page — plain text, no HTML)"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
         <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-muted)]">
           <input type="checkbox" checked={form.active}
@@ -443,6 +455,8 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
               </p>
               <p className="mt-0.5 font-mono text-xs text-[var(--color-muted)]">
                 {p.price_usdg} USDG · stock {p.stock} · sort {p.sort}
+                {Number(p.min_infinity_tokens) > 0 &&
+                  ` · gate ${Number(p.min_infinity_tokens).toLocaleString()} INFINITY`}
               </p>
             </div>
             <button
@@ -452,9 +466,11 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
                   id: p.id,
                   title: p.title,
                   blurb: p.blurb,
+                  description: p.description ?? "",
                   image_url: p.image_url ?? "",
                   price_usdg: String(p.price_usdg),
                   stock: String(p.stock),
+                  min_infinity_tokens: String(p.min_infinity_tokens ?? 0),
                   active: p.active,
                   sort: String(p.sort),
                 })

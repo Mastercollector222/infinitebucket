@@ -108,6 +108,19 @@ export async function POST(req: Request) {
     if (rawBal == null) return fail(502, "Could not read your balance on-chain.");
     if (priceUsdg == null) return fail(502, "No INFINITY quote available — try again.");
 
+    // Per-item hold gate — re-checked on-chain, never from the client.
+    const gated: string[] = [];
+    for (const pid of lines.keys()) {
+      const p = byId.get(pid);
+      const min = BigInt(Math.max(0, Number(p?.min_infinity_tokens) || 0)) * 10n ** 18n;
+      if (p && min > 0n && rawBal < min) {
+        gated.push(`${p.title} (needs ${Number(p.min_infinity_tokens).toLocaleString()} INFINITY)`);
+      }
+    }
+    if (gated.length > 0) {
+      return fail(403, `Balance too low for: ${gated.join(", ")}.`);
+    }
+
     const balance = Number(rawBal / 10n ** 18n); // whole tokens — enough for tiers
     const pct = tierFor(balance, (tiersRes.data ?? []) as ShopTier[])?.percent ?? 0;
 

@@ -33,11 +33,15 @@ export type ShopProduct = {
   id: number;
   title: string;
   blurb: string;
+  description: string | null;
   image_url: string | null;
   price_usdg: number;
   stock: number;
   active: boolean;
   sort: number;
+  // Per-item hold gate: minimum INFINITY balance (human units) required
+  // to buy. 0 = any connected wallet.
+  min_infinity_tokens: number;
 };
 
 export type ShopOrderStatus =
