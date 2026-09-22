@@ -34,7 +34,8 @@ export type ShopProduct = {
   title: string;
   blurb: string;
   description: string | null;
-  image_url: string | null;
+  image_url: string | null; // legacy — kept synced to images[0]
+  images: string[]; // Cloudinary URLs, max SHOP_IMAGE_MAX, [0] = thumbnail
   price_usdg: number;
   stock: number;
   active: boolean;
@@ -43,6 +44,18 @@ export type ShopProduct = {
   // to buy. 0 = any connected wallet.
   min_infinity_tokens: number;
 };
+
+export const SHOP_IMAGE_PREFIX = "https://res.cloudinary.com/";
+export const SHOP_IMAGE_MAX = 6;
+
+// Render-safe image list: allowlisted hosts only (matches CSP img-src),
+// falls back to legacy image_url, capped at the max.
+export function productImages(
+  p: Pick<ShopProduct, "images" | "image_url">,
+): string[] {
+  const list = p.images?.length ? p.images : p.image_url ? [p.image_url] : [];
+  return list.filter((u) => u.startsWith(SHOP_IMAGE_PREFIX)).slice(0, SHOP_IMAGE_MAX);
+}
 
 export type ShopOrderStatus =
   | "awaiting_payment"

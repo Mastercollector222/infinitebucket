@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { LINKS } from "@/lib/constants";
 import {
   formatInfinityRaw,
+  productImages,
   tierFor,
   type ShopOrder,
   type ShopProduct,
@@ -289,10 +290,10 @@ function ProductGrid({
           <article key={p.id} className="glass group overflow-hidden">
             <Link href={`/shop/${p.id}`} className="block">
               <div className="relative aspect-[4/3] overflow-hidden bg-[rgba(14,8,22,0.7)]">
-                {p.image_url ? (
+                {productImages(p)[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={p.image_url}
+                    src={productImages(p)[0]}
                     alt={p.title}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                   />

@@ -165,9 +165,17 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
 `SUPABASE_SERVICE_ROLE_KEY`.
 
 - Catalog: public — every visitor sees every product; logged-out users get
-  "Connect to add". Product cards link to `/shop/[id]` detail pages (large
-  image, full `description`, price, hold requirement, balance vs
-  requirement, discount preview, CTA).
+  "Connect to add". Product cards link to `/shop/[id]` detail pages (image
+  gallery with click-to-enlarge, full `description`, price, hold
+  requirement, balance vs requirement, discount preview, CTA).
+- Product images: `shop_products.images text[]` (max 6, first = grid
+  thumbnail). Admin uploads go through `POST /api/admin/shop/image` —
+  signed admin wallet required, jpg/png/webp ≤ 2 MB, uploaded with the
+  server Cloudinary SDK into `shop/<product_id>`; the API secret never
+  reaches the browser. Only `https://res.cloudinary.com/` URLs persist —
+  enforced on write (admin API) and at render (`productImages()`), matching
+  CSP `img-src`. Migration: `supabase/shop_images.sql` backfills
+  `images` from the legacy `image_url` (kept synced to `images[0]`).
 - Per-item gate: `shop_products.min_infinity_tokens` (human units, default
   `0` = any connected wallet can buy). Under the requirement the card and
   detail page stay visible but Add-to-cart is disabled with a

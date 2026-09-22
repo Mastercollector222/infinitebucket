@@ -21,6 +21,25 @@ if (cloudinaryReady) {
 export const AVATAR_MAX_BYTES = 1_048_576; // 1 MB
 export const AVATAR_MIME = ["image/jpeg", "image/png", "image/webp"] as const;
 
+export const SHOP_IMAGE_MAX_BYTES = 2 * 1_048_576; // 2 MB
+export const SHOP_IMAGE_MIME = AVATAR_MIME; // jpg/png/webp — never svg
+
+// Signed upload for shop product images (admin-only callers).
+// unique public_id per upload — never overwrites another product's asset.
+export async function uploadShopImage(
+  folder: string,
+  publicId: string,
+  dataUri: string,
+): Promise<string> {
+  const result = await cloudinary.uploader.upload(dataUri, {
+    folder,
+    public_id: publicId,
+    overwrite: false,
+    resource_type: "image",
+  });
+  return result.secure_url;
+}
+
 // Signed upload (api_secret signs automatically). public_id = wallet so a
 // re-upload overwrites the previous avatar. If the configured upload preset
 // doesn't exist on the cloud, retry without it rather than failing.

@@ -155,7 +155,9 @@ function AdminPanel({
       {tab === "orders" && (
         <OrdersTab run={run} signAction={signAction} onDone={() => setNotice("Saved.")} />
       )}
-      {tab === "products" && <ProductsTab run={run} onDone={() => setNotice("Saved.")} />}
+      {tab === "products" && (
+        <ProductsTab run={run} verify={verify} onDone={() => setNotice("Saved.")} />
+      )}
       {tab === "tiers" && <TiersTab run={run} onDone={() => setNotice("Saved.")} />}
       {tab === "settings" && <SettingsTab run={run} onDone={() => setNotice("Saved.")} />}
     </>
@@ -380,7 +382,7 @@ const emptyProduct = {
   title: "",
   blurb: "",
   description: "",
-  image_url: "",
+  images: [] as string[],
   price_usdg: "",
   stock: "0",
   min_infinity_tokens: "0",
@@ -388,9 +390,22 @@ const emptyProduct = {
   sort: "0",
 };
 
-function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
+const CLOUDINARY_PREFIX = "https://res.cloudinary.com/";
+
+function ProductsTab({
+  run,
+  verify,
+  onDone,
+}: {
+  run: Run;
+  verify: () => Promise<void>;
+  onDone: () => void;
+}) {
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [form, setForm] = useState({ ...emptyProduct });
+  const [urlInput, setUrlInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [imgErr, setImgErr] = useState<string | null>(null);
 
   // Products are public-read; the anon client can list them for the admin UI.
   const load = useCallback(async () => {
@@ -409,7 +424,7 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
       title: form.title,
       blurb: form.blurb,
       description: form.description,
-      image_url: form.image_url,
+      images: form.images,
       price_usdg: Number(form.price_usdg),
       stock: Number(form.stock),
       min_infinity_tokens: Number(form.min_infinity_tokens) || 0,
@@ -418,8 +433,56 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
     });
     if (j?.ok) {
       setForm({ ...emptyProduct });
+      setUrlInput("");
       onDone();
       load();
+    }
+  };
+
+  const addImage = (u: string) => {
+    const url = u.trim();
+    setImgErr(null);
+    if (form.images.length >= 6) return setImgErr("Max 6 images per product.");
+    if (!url.startsWith(CLOUDINARY_PREFIX)) {
+      return setImgErr("Images must be https://res.cloudinary.com/ URLs.");
+    }
+    setForm((f) => ({ ...f, images: [...f.images, url] }));
+    setUrlInput("");
+  };
+
+  const moveImage = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= form.images.length) return;
+    const next = [...form.images];
+    [next[i], next[j]] = [next[j], next[i]];
+    setForm({ ...form, images: next });
+  };
+
+  // Admin-signed upload → server Cloudinary SDK (secret never leaves API).
+  const upload = async (file: File) => {
+    setImgErr(null);
+    setUploading(true);
+    try {
+      let p = proof();
+      if (!p) {
+        await verify();
+        p = proof();
+      }
+      if (!p) throw new Error("No verified session — sign in again.");
+      const fd = new FormData();
+      fd.set("wallet", p.wallet);
+      fd.set("iso", p.iso);
+      fd.set("signature", p.signature);
+      fd.set("product_id", form.id ? String(form.id) : "temp");
+      fd.set("file", file);
+      const res = await fetch("/api/admin/shop/image", { method: "POST", body: fd });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error ?? "Upload failed.");
+      setForm((f) => (f.images.length >= 6 ? f : { ...f, images: [...f.images, j.url] }));
+    } catch (e) {
+      setImgErr((e as Error).message);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -438,8 +501,6 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
           <input className={input} placeholder="Price USDG" inputMode="decimal"
             value={form.price_usdg}
             onChange={(e) => setForm({ ...form, price_usdg: e.target.value })} />
-          <input className={input} placeholder="Image URL (https://…)" value={form.image_url}
-            onChange={(e) => setForm({ ...form, image_url: e.target.value })} />
           <div className="flex gap-3">
             <input className={input} placeholder="Stock" inputMode="numeric" value={form.stock}
               onChange={(e) => setForm({ ...form, stock: e.target.value })} />
@@ -457,6 +518,74 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
             placeholder="Description (detail page — plain text, no HTML)"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })} />
+
+          {/* Images — max 6, first = grid thumbnail */}
+          <div className="sm:col-span-2">
+            <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-[var(--color-muted)]">
+              Images ({form.images.length}/6) — first is the grid thumbnail
+            </p>
+            {form.images.length > 0 && (
+              <div className="mb-2 space-y-1.5">
+                {form.images.map((u, i) => (
+                  <div
+                    key={`${u}-${i}`}
+                    className="flex items-center gap-2 rounded-lg border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-2 py-1.5"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={u}
+                      alt={`Image ${i + 1}`}
+                      className="h-10 w-10 rounded-md border border-[var(--color-stroke)] object-cover"
+                    />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[0.65rem] text-[var(--color-muted)]">
+                      {i === 0 ? "★ " : ""}{u}
+                    </span>
+                    <button type="button" disabled={i === 0} aria-label="Move up"
+                      onClick={() => moveImage(i, -1)}
+                      className="px-1.5 text-xs text-[var(--color-chrome)] disabled:opacity-25">↑</button>
+                    <button type="button" disabled={i === form.images.length - 1} aria-label="Move down"
+                      onClick={() => moveImage(i, 1)}
+                      className="px-1.5 text-xs text-[var(--color-chrome)] disabled:opacity-25">↓</button>
+                    <button type="button" aria-label="Remove image"
+                      onClick={() => setForm({ ...form, images: form.images.filter((_, j) => j !== i) })}
+                      className="px-1.5 text-xs text-[var(--color-sell)]">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                className={input}
+                placeholder="https://res.cloudinary.com/…"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => addImage(urlInput)}
+                disabled={form.images.length >= 6 || !urlInput.trim()}
+                className="shrink-0 rounded-lg border border-[var(--color-stroke)] px-3 py-2 text-xs text-[var(--color-chrome)] disabled:opacity-40"
+              >
+                Add URL
+              </button>
+              <label
+                className={`shrink-0 cursor-pointer rounded-lg border border-[rgba(196,160,255,0.35)] px-3 py-2 text-xs text-[var(--color-chrome)] ${uploading || form.images.length >= 6 ? "pointer-events-none opacity-40" : ""}`}
+              >
+                {uploading ? "Uploading…" : "Upload image"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) upload(f);
+                  }}
+                />
+              </label>
+            </div>
+            {imgErr && <p className="mt-2 text-xs text-[var(--color-sell)]">{imgErr}</p>}
+          </div>
         </div>
         <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-muted)]">
           <input type="checkbox" checked={form.active}
@@ -503,7 +632,11 @@ function ProductsTab({ run, onDone }: { run: Run; onDone: () => void }) {
                   title: p.title,
                   blurb: p.blurb,
                   description: p.description ?? "",
-                  image_url: p.image_url ?? "",
+                  images: p.images?.length
+                    ? p.images
+                    : p.image_url
+                      ? [p.image_url]
+                      : [],
                   price_usdg: String(p.price_usdg),
                   stock: String(p.stock),
                   min_infinity_tokens: String(p.min_infinity_tokens ?? 0),

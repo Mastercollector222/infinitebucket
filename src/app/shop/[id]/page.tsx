@@ -10,6 +10,7 @@ import { useShopCart } from "@/hooks/useShopCart";
 import { supabase } from "@/lib/supabase";
 import { LINKS } from "@/lib/constants";
 import {
+  productImages,
   tierFor,
   type ShopOrder,
   type ShopProduct,
@@ -92,24 +93,8 @@ export default function ProductPage() {
         </div>
       ) : (
         <div className="mt-6 grid gap-8 lg:grid-cols-2">
-          {/* Image */}
-          <div className="glass relative aspect-square overflow-hidden">
-            {product.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={product.image_url}
-                alt={product.title}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <MetalDisc size="h-56 w-56" />
-            )}
-            {!product.active && (
-              <span className="absolute left-4 top-4 rounded-full border border-[rgba(196,160,255,0.35)] bg-[rgba(10,6,16,0.75)] px-3 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-chrome)] backdrop-blur">
-                Coming soon
-              </span>
-            )}
-          </div>
+          {/* Gallery */}
+          <Gallery product={product} />
 
           {/* Info */}
           <div>
@@ -273,5 +258,130 @@ export default function ProductPage() {
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+/* ── Image gallery: thumbnails + click-to-enlarge lightbox ─────────────── */
+
+function Gallery({ product }: { product: ShopProduct }) {
+  const imgs = productImages(product); // cloudinary-allowlisted, max 6
+  const [active, setActive] = useState(0);
+  const [zoom, setZoom] = useState(false);
+  const shown = imgs[Math.min(active, Math.max(0, imgs.length - 1))];
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => shown && setZoom(true)}
+        className="glass relative block aspect-square w-full overflow-hidden text-left"
+        aria-label={shown ? "Enlarge image" : product.title}
+      >
+        {shown ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={shown}
+            alt={product.title}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <MetalDisc size="h-56 w-56" />
+        )}
+        {!product.active && (
+          <span className="absolute left-4 top-4 rounded-full border border-[rgba(196,160,255,0.35)] bg-[rgba(10,6,16,0.75)] px-3 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-chrome)] backdrop-blur">
+            Coming soon
+          </span>
+        )}
+        {shown && (
+          <span className="absolute bottom-4 right-4 rounded-full border border-[var(--color-stroke)] bg-[rgba(10,6,16,0.75)] px-3 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-[var(--color-chrome)] backdrop-blur">
+            Click to enlarge
+          </span>
+        )}
+      </button>
+
+      {imgs.length > 1 && (
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {imgs.map((u, i) => (
+            <button
+              key={`${u}-${i}`}
+              type="button"
+              onClick={() => setActive(i)}
+              aria-label={`Image ${i + 1}`}
+              className={`shrink-0 overflow-hidden rounded-lg border transition ${
+                i === active
+                  ? "border-[rgba(196,160,255,0.6)]"
+                  : "border-[var(--color-stroke)] opacity-60 hover:opacity-100"
+              }`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={u}
+                alt={`${product.title} ${i + 1}`}
+                className="h-16 w-16 object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {zoom && shown && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(4,2,8,0.92)] p-4 backdrop-blur-sm"
+            onClick={() => setZoom(false)}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <motion.img
+              src={shown}
+              alt={product.title}
+              initial={{ scale: 0.92 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.92 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="max-h-[88vh] max-w-[92vw] rounded-xl object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+            {imgs.length > 1 && (
+              <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActive((a) => (a - 1 + imgs.length) % imgs.length);
+                  }}
+                  className="rounded-full border border-[var(--color-stroke)] bg-[rgba(10,6,16,0.8)] px-4 py-2 text-sm text-[var(--color-chrome)]"
+                >
+                  ← Prev
+                </button>
+                <span className="font-mono text-xs text-[var(--color-muted)]">
+                  {Math.min(active, imgs.length - 1) + 1} / {imgs.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActive((a) => (a + 1) % imgs.length);
+                  }}
+                  className="rounded-full border border-[var(--color-stroke)] bg-[rgba(10,6,16,0.8)] px-4 py-2 text-sm text-[var(--color-chrome)]"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setZoom(false)}
+              aria-label="Close"
+              className="absolute right-5 top-5 rounded-full border border-[var(--color-stroke)] bg-[rgba(10,6,16,0.8)] px-3.5 py-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-white-soft)]"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
