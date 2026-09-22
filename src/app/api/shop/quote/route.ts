@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { shopPriceUsdg } from "@/lib/shopServer";
+import { shippingUsdg, shopPriceUsdg } from "@/lib/shopServer";
 
 export const revalidate = 30; // shop quote cache: 30s
 
@@ -18,6 +18,7 @@ export async function GET() {
     ok: true,
     priceUsdg, // USDG per 1 INFINITY
     infinityPerUsdg: 1 / priceUsdg,
+    shippingUsdg: shippingUsdg(),
     updatedAt: Date.now(),
   });
 }

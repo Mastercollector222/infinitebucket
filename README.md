@@ -50,6 +50,8 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SHOP_WALLET` | Yes (shop) | Wallet that receives shop payments — shown on the checkout screen. |
 | `NEXT_PUBLIC_ADMIN_WALLETS` | Yes (admin) | Comma-separated lowercase admin wallets. Public list; the signature check in `/api/admin/shop` is the real gate. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes (shop) | Service-role key — **server only, never `NEXT_PUBLIC_`**. All `shop_*` writes are mediated by signature-verified API routes; RLS denies anon writes. |
+| `SHIPPING_USD` | No | Flat shipping in USDG added to every order (default `6`). Server-side only. |
+| `SHIPPING_ENCRYPTION_KEY` | No | 32-byte hex → AES-256-GCM encrypts `shop_shipments` fields at rest (server-side). Without it fields are plaintext behind RLS + service-role-only access. |
 
 ## Database (run once in the Supabase SQL editor)
 
@@ -162,14 +164,32 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
   Dexscreener fallback, 30s cache). The server recomputes the discount and
   amount from the wallet's on-chain balance at order time — nothing the
   client sends is trusted.
-- Checkout: create order → send exactly `infinity_raw_due` $INFINITY to
-  `NEXT_PUBLIC_SHOP_WALLET` → paste the tx hash → the API verifies on
-  Blockscout (to=shop wallet, from=buyer, INFINITY, amount ≥ due, tx not
-  already used) → `paid_pending_ship`. No approvals, no custody contract —
-  the site never pulls tokens.
+- Cart: multi-product cart per wallet (localStorage `ib_cart_<wallet>`);
+  stock is re-checked server-side at order time and unavailable lines are
+  rejected before the order exists.
+- Checkout: order created `awaiting_payment` → buyer sends exactly
+  `infinity_raw_due` $INFINITY (discounted merch + flat shipping in one
+  transfer) to `NEXT_PUBLIC_SHOP_WALLET` → pastes the tx hash → the API
+  verifies on Blockscout (to=shop wallet, from=buyer, INFINITY, amount ≥
+  due, tx not already used) → `paid_need_address` → shipping form →
+  `paid_pending_ship` → admin marks `shipped`. No approvals, no custody
+  contract — the site never pulls tokens.
+- Shipping: flat `$SHIPPING_USD` (default 6 USDG-equivalent) in $INFINITY
+  at the same pool rate. "Flat shipping: $6 in $INFINITY."
+- PII: ship-to data lives in `shop_shipments` — no public RLS policies at
+  all. Buyer reads/writes it only via `/api/shop/shipment` with a wallet
+  signature for an order they own; admins read it only via
+  `/api/admin/shop` `get_shipment`. Fields are AES-256-GCM ciphertext when
+  `SHIPPING_ENCRYPTION_KEY` (32-byte hex) is set — the Node route does the
+  crypto, so the key never reaches Postgres. Without the key: plaintext,
+  still RLS + service-role-only. Addresses never appear on `/u`, the
+  leaderboard, or any public surface.
 - Admin: `/admin/shop` is gated by `NEXT_PUBLIC_ADMIN_WALLETS` + a signed
   login nonce (same signature pattern as profiles). Manage min tokens,
-  tiers, products (CRUD), and mark orders shipped with a tracking note.
+  tiers, products (CRUD), view order items + (per-order, signed) shipping
+  address, and mark orders shipped with a tracking note.
+- Migrations: `supabase/shop.sql` then `supabase/shop_cart.sql` (cart +
+  shipments + new order statuses — safe to re-run).
 - Access model: `shop_tiers`/`shop_products`/`shop_settings` are public-read
   via RLS. `shop_orders` has no anon access — all writes and order reads go
   through `/api/shop/orders` and `/api/admin/shop`, which verify the wallet

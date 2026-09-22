@@ -1,6 +1,7 @@
 // Server-only shop helpers. Never import from client components — this file
 // reads SUPABASE_SERVICE_ROLE_KEY.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { getAddress, verifyMessage } from "viem";
 import { loginMessage } from "./auth";
 import { CHAIN, POOL, TOKEN } from "./constants";
@@ -122,6 +123,52 @@ export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const j = (await res.json()) as { result?: T; error?: { message?: string } };
   if (j.error) throw new Error(j.error.message ?? "rpc error");
   return j.result as T;
+}
+
+// ── Shipping ─────────────────────────────────────────────────────────────
+
+// Flat shipping in USDG, added to every order. Server-side env.
+export function shippingUsdg(): number {
+  const n = parseFloat(process.env.SHIPPING_USD ?? "");
+  return Number.isFinite(n) && n >= 0 ? n : 6;
+}
+
+// AES-256-GCM at rest for shipment PII when SHIPPING_ENCRYPTION_KEY
+// (32-byte hex) is set. Key never leaves this server — ciphertext goes to
+// Postgres, plaintext only exists inside API request scope. Without the
+// key, fields store plaintext (enc=false) behind RLS + service-role only.
+function shipKey(): Buffer | null {
+  const hex = (process.env.SHIPPING_ENCRYPTION_KEY ?? "").trim();
+  return /^[0-9a-fA-F]{64}$/.test(hex) ? Buffer.from(hex, "hex") : null;
+}
+
+export function encField(plain: string): { value: string; enc: boolean } {
+  const key = shipKey();
+  if (!key || !plain) return { value: plain, enc: false };
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", key, iv);
+  const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+  return {
+    value: `v1:${iv.toString("base64")}:${c.getAuthTag().toString("base64")}:${ct.toString("base64")}`,
+    enc: true,
+  };
+}
+
+export function decField(value: string, enc: boolean): string {
+  if (!enc || !value.startsWith("v1:")) return value;
+  const key = shipKey();
+  if (!key) return "[encrypted]";
+  try {
+    const [, iv, tag, ct] = value.split(":");
+    const d = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
+    d.setAuthTag(Buffer.from(tag, "base64"));
+    return Buffer.concat([
+      d.update(Buffer.from(ct, "base64")),
+      d.final(),
+    ]).toString("utf8");
+  } catch {
+    return "[encrypted]";
+  }
 }
 
 const BALANCE_OF = "0x70a08231"; // balanceOf(address)

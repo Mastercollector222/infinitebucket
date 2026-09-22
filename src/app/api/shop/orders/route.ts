@@ -2,18 +2,20 @@ import { NextResponse } from "next/server";
 import {
   readBalanceRaw,
   serviceSupabase,
+  shippingUsdg,
   shopPriceUsdg,
   txTransfers,
   verifyWalletProof,
 } from "@/lib/shopServer";
 import { infinityDueRaw, tierFor, SHOP_WALLET } from "@/lib/shop";
 import { TOKEN } from "@/lib/constants";
-import type { ShopTier } from "@/lib/shop";
+import type { ShopProduct, ShopTier } from "@/lib/shop";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TX_RE = /^0x[0-9a-fA-F]{64}$/;
+const ITEMS_SELECT = "*, shop_order_items(*, shop_products(title))";
 
 function fail(status: number, error: string) {
   return NextResponse.json({ ok: false, error }, { status });
@@ -21,11 +23,11 @@ function fail(status: number, error: string) {
 
 // POST /api/shop/orders
 //   { action: "mine",   wallet, iso, signature }
-//   { action: "create", wallet, iso, signature, product_id, qty }
+//   { action: "create", wallet, iso, signature, items: [{product_id, qty}] }
 //   { action: "pay",    wallet, iso, signature, order_id, tx_hash }
-// Every action needs a valid login proof — the recovered signer is the only
-// wallet the order can belong to. Prices/discounts are recomputed
-// server-side; nothing the client sends is trusted.
+// The recovered signer is the only wallet the order can belong to. Prices,
+// discounts, stock, and the amount due are all recomputed server-side —
+// nothing the client sends is trusted.
 export async function POST(req: Request) {
   const sb = serviceSupabase();
   if (!sb) return fail(503, "Shop storage is not configured.");
@@ -52,7 +54,7 @@ export async function POST(req: Request) {
   if (action === "mine") {
     const { data, error } = await sb
       .from("shop_orders")
-      .select("*, shop_products(title)")
+      .select(ITEMS_SELECT)
       .eq("wallet", signer)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -62,22 +64,42 @@ export async function POST(req: Request) {
 
   if (action === "create") {
     if (!SHOP_WALLET) return fail(503, "Shop wallet is not configured.");
-    const product_id = Number(body.product_id);
-    const qty = Math.floor(Number(body.qty));
-    if (!Number.isInteger(product_id) || !Number.isInteger(qty) || qty < 1 || qty > 99) {
-      return fail(400, "Bad product or quantity.");
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0 || items.length > 20) {
+      return fail(400, "Cart is empty.");
+    }
+    // Normalize + merge duplicate product lines.
+    const lines = new Map<number, number>();
+    for (const it of items) {
+      const pid = Number((it as { product_id?: unknown }).product_id);
+      const qty = Math.floor(Number((it as { qty?: unknown }).qty));
+      if (!Number.isInteger(pid) || !Number.isInteger(qty) || qty < 1 || qty > 99) {
+        return fail(400, "Bad cart line.");
+      }
+      lines.set(pid, (lines.get(pid) ?? 0) + qty);
     }
 
-    const { data: product, error: pErr } = await sb
+    const ids = [...lines.keys()];
+    const { data: products, error: pErr } = await sb
       .from("shop_products")
       .select("*")
-      .eq("id", product_id)
-      .maybeSingle();
-    if (pErr || !product) return fail(404, "Product not found.");
-    if (!product.active) return fail(400, "Product is not on sale yet.");
-    if (product.stock < qty) return fail(400, "Not enough stock.");
+      .in("id", ids);
+    if (pErr) return fail(502, `Could not load products: ${pErr.message}`);
+    const byId = new Map<number, ShopProduct>(
+      ((products ?? []) as ShopProduct[]).map((p) => [p.id, p]),
+    );
 
-    // Recompute the discount from the wallet's live on-chain balance.
+    // Authoritative stock/active check — server is the source of truth.
+    const unavailable: string[] = [];
+    for (const [pid, qty] of lines) {
+      const p = byId.get(pid);
+      if (!p || !p.active) unavailable.push(p?.title ?? `#${pid}`);
+      else if (p.stock < qty) unavailable.push(`${p.title} (only ${p.stock} left)`);
+    }
+    if (unavailable.length > 0) {
+      return fail(400, `Unavailable: ${unavailable.join(", ")} — remove them and retry.`);
+    }
+
     const [rawBal, tiersRes, priceUsdg] = await Promise.all([
       readBalanceRaw(signer).catch(() => null),
       sb.from("shop_tiers").select("*"),
@@ -86,30 +108,62 @@ export async function POST(req: Request) {
     if (rawBal == null) return fail(502, "Could not read your balance on-chain.");
     if (priceUsdg == null) return fail(502, "No INFINITY quote available — try again.");
 
-    const balance = Number(rawBal / 10n ** 18n); // whole-token precision is enough for tiers
-    const tiers = (tiersRes.data ?? []) as ShopTier[];
-    const tier = tierFor(balance, tiers);
-    const pct = tier?.percent ?? 0;
-    const usdg_due = product.price_usdg * qty * (1 - pct / 100);
-    const due = infinityDueRaw(usdg_due, priceUsdg);
+    const balance = Number(rawBal / 10n ** 18n); // whole tokens — enough for tiers
+    const pct = tierFor(balance, (tiersRes.data ?? []) as ShopTier[])?.percent ?? 0;
+
+    const merchList = [...lines.entries()].reduce(
+      (sum, [pid, qty]) => sum + (byId.get(pid)?.price_usdg ?? 0) * qty,
+      0,
+    );
+    const usdg_due = merchList * (1 - pct / 100);
+    const shipping = shippingUsdg();
+    const total_usdg = usdg_due + shipping;
+    const due = infinityDueRaw(total_usdg, priceUsdg);
     if (due <= 0n) return fail(502, "Quote produced a zero amount — try again.");
 
     const { data: order, error } = await sb
       .from("shop_orders")
       .insert({
         wallet: signer,
-        product_id,
-        qty,
-        price_usdg: product.price_usdg,
         discount_pct: pct,
         usdg_due,
+        shipping_usdg: shipping,
+        total_usdg,
         infinity_raw_due: due.toString(),
-        status: "awaiting_tx",
+        status: "awaiting_payment",
       })
       .select()
       .single();
-    if (error) return fail(502, `Could not create order: ${error.message}`);
-    return NextResponse.json({ ok: true, order, shopWallet: SHOP_WALLET });
+    if (error || !order) {
+      return fail(502, `Could not create order: ${error?.message ?? "insert failed"}`);
+    }
+
+    const { error: iErr } = await sb.from("shop_order_items").insert(
+      [...lines.entries()].map(([pid, qty]) => ({
+        order_id: order.id,
+        product_id: pid,
+        qty,
+        price_usdg: byId.get(pid)?.price_usdg ?? 0,
+      })),
+    );
+    if (iErr) {
+      // Roll back the orphan order — no transaction across PostgREST calls.
+      await sb.from("shop_orders").delete().eq("id", order.id);
+      return fail(502, `Could not save order items: ${iErr.message}`);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      order,
+      items: [...lines.entries()].map(([pid, qty]) => ({
+        product_id: pid,
+        qty,
+        title: byId.get(pid)?.title ?? `#${pid}`,
+        price_usdg: byId.get(pid)?.price_usdg ?? 0,
+      })),
+      shopWallet: SHOP_WALLET,
+      shippingUsdg: shipping,
+    });
   }
 
   if (action === "pay") {
@@ -126,7 +180,7 @@ export async function POST(req: Request) {
       .maybeSingle();
     if (!order) return fail(404, "Order not found.");
     if (order.wallet !== signer) return fail(403, "Not your order.");
-    if (order.status !== "awaiting_tx") {
+    if (order.status !== "awaiting_payment") {
       return fail(400, `Order is already ${order.status}.`);
     }
 
@@ -163,12 +217,12 @@ export async function POST(req: Request) {
     const { error } = await sb
       .from("shop_orders")
       .update({
-        status: "paid_pending_ship",
+        status: "paid_need_address",
         tx_hash,
         paid_at: new Date().toISOString(),
       })
       .eq("id", order_id)
-      .eq("status", "awaiting_tx"); // guard against double-submit races
+      .eq("status", "awaiting_payment"); // guard against double-submit races
     if (error) {
       return fail(
         error.code === "23505" ? 400 : 502,
@@ -177,7 +231,7 @@ export async function POST(req: Request) {
           : `Could not mark order paid: ${error.message}`,
       );
     }
-    return NextResponse.json({ ok: true, status: "paid_pending_ship" });
+    return NextResponse.json({ ok: true, status: "paid_need_address" });
   }
 
   return fail(400, `Unknown action "${action}".`);

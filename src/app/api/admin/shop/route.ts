@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { serviceSupabase, verifyAdmin } from "@/lib/shopServer";
+import { decField, serviceSupabase, verifyAdmin } from "@/lib/shopServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,13 +119,41 @@ export async function POST(req: Request) {
       const status = str(body.status, 30);
       let q = sb
         .from("shop_orders")
-        .select("*, shop_products(title)")
+        .select("*, shop_order_items(*, shop_products(title))")
         .order("created_at", { ascending: false })
         .limit(200);
       if (status) q = q.eq("status", status);
       const { data, error } = await q;
       if (error) return fail(502, error.message);
       return NextResponse.json({ ok: true, orders: data ?? [] });
+    }
+
+    // PII: only reachable here — admin signature checked above, decrypted
+    // server-side, never exposed to anon keys or public pages.
+    case "get_shipment": {
+      const id = num(body.order_id);
+      if (id == null) return fail(400, "Missing order id.");
+      const { data: s, error } = await sb
+        .from("shop_shipments")
+        .select("*")
+        .eq("order_id", id)
+        .maybeSingle();
+      if (error) return fail(502, error.message);
+      if (!s) return NextResponse.json({ ok: true, shipment: null });
+      const shipment: Record<string, string> = {};
+      for (const f of [
+        "recipient_name",
+        "line1",
+        "line2",
+        "city",
+        "region",
+        "postal",
+        "country",
+        "phone",
+      ]) {
+        shipment[f] = decField(String(s[f] ?? ""), Boolean(s.enc));
+      }
+      return NextResponse.json({ ok: true, shipment });
     }
 
     case "mark_shipped": {
@@ -151,7 +179,7 @@ export async function POST(req: Request) {
         .from("shop_orders")
         .update({ status: "cancelled" })
         .eq("id", id)
-        .eq("status", "awaiting_tx");
+        .eq("status", "awaiting_payment");
       if (error) return fail(502, error.message);
       return NextResponse.json({ ok: true });
     }

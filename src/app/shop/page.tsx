@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "@/components/AuthContext";
 import { useInfinityBalance } from "@/hooks/useInfinityBalance";
@@ -14,14 +14,28 @@ import {
   formatInfinityRaw,
   rawToDecimalString,
   tierFor,
+  validateShipment,
+  type CartLine,
   type ShopOrder,
   type ShopProduct,
   type ShopTier,
+  type ShipmentInput,
 } from "@/lib/shop";
 
 function fmt(n: number, digits = 0): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
+
+const EMPTY_SHIPMENT: ShipmentInput = {
+  recipient_name: "",
+  line1: "",
+  line2: "",
+  city: "",
+  region: "",
+  postal: "",
+  country: "",
+  phone: "",
+};
 
 // Stored login proof reused as the write signature — same pattern as the
 // avatar upload. If the session has no usable proof the caller triggers
@@ -41,7 +55,13 @@ export default function ShopPage() {
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [catalogReady, setCatalogReady] = useState(false);
   const [orders, setOrders] = useState<ShopOrder[]>([]);
-  const [checkout, setCheckout] = useState<ShopProduct | null>(null);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [addressOrder, setAddressOrder] = useState<ShopOrder | null>(null);
+  const [payOrder, setPayOrder] = useState<ShopOrder | null>(null);
+
+  const wallet = address?.toLowerCase();
+  const cartKey = wallet ? `ib_cart_${wallet}` : null;
 
   // Catalog data is public-read — plain anon selects, no signature needed.
   useEffect(() => {
@@ -58,6 +78,65 @@ export default function ShopPage() {
       setCatalogReady(true);
     });
   }, []);
+
+  // Cart persists per wallet in localStorage.
+  useEffect(() => {
+    if (!cartKey) {
+      setCart([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(cartKey);
+      const parsed = raw ? (JSON.parse(raw) as CartLine[]) : [];
+      setCart(
+        Array.isArray(parsed)
+          ? parsed.filter(
+              (l) => Number.isInteger(l.product_id) && Number.isInteger(l.qty) && l.qty > 0,
+            )
+          : [],
+      );
+    } catch {
+      setCart([]);
+    }
+  }, [cartKey]);
+
+  const saveCart = useCallback(
+    (next: CartLine[]) => {
+      setCart(next);
+      if (cartKey) {
+        try {
+          localStorage.setItem(cartKey, JSON.stringify(next));
+        } catch {
+          /* storage unavailable */
+        }
+      }
+    },
+    [cartKey],
+  );
+
+  const addToCart = useCallback(
+    (p: ShopProduct) => {
+      const cur = cart.find((l) => l.product_id === p.id)?.qty ?? 0;
+      if (cur >= p.stock) return;
+      saveCart(
+        cur > 0
+          ? cart.map((l) => (l.product_id === p.id ? { ...l, qty: l.qty + 1 } : l))
+          : [...cart, { product_id: p.id, qty: 1 }],
+      );
+    },
+    [cart, saveCart],
+  );
+
+  const setQty = useCallback(
+    (product_id: number, qty: number) => {
+      saveCart(
+        qty <= 0
+          ? cart.filter((l) => l.product_id !== product_id)
+          : cart.map((l) => (l.product_id === product_id ? { ...l, qty } : l)),
+      );
+    },
+    [cart, saveCart],
+  );
 
   const loadOrders = useCallback(async () => {
     const proof = sessionProof();
@@ -82,9 +161,18 @@ export default function ShopPage() {
   const connected = status === "ready" || status === "needs_username";
   const eligible = balance != null && balance >= minTokens;
   const tier = balance != null ? tierFor(balance, tiers) : null;
+  const cartCount = cart.reduce((n, l) => n + l.qty, 0);
+
+  const cartLines = useMemo(
+    () =>
+      cart
+        .map((l) => ({ ...l, product: products.find((p) => p.id === l.product_id) }))
+        .filter((l): l is CartLineFull => l.product != null),
+    [cart, products],
+  );
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-14 sm:px-6">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-32 pt-14 sm:px-6">
       <header className="mb-10">
         <p className="font-mono text-[0.65rem] uppercase tracking-[0.3em] text-[var(--color-live)]">
           Holders only
@@ -94,6 +182,8 @@ export default function ShopPage() {
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--color-muted)]">
           Hold more $INFINITY, pay less. Price set in USDG, charged in $INFINITY.
+          Pay in $INFINITY first — then we ask where to send it. We do not publish
+          your address.
         </p>
       </header>
 
@@ -106,22 +196,75 @@ export default function ShopPage() {
       ) : (
         <>
           <TierBanner tier={tier} tiers={tiers} balance={balance} />
-          <ProductGrid products={products} onBuy={setCheckout} />
-          <OrdersList orders={orders} />
+          <ProductGrid products={products} cart={cart} onAdd={addToCart} />
+          <OrdersList
+            orders={orders}
+            onAddAddress={setAddressOrder}
+            onResumePay={setPayOrder}
+          />
         </>
       )}
 
+      {/* Cart bar */}
       <AnimatePresence>
-        {checkout && address && rawBalance != null && (
+        {connected && eligible && cartCount > 0 && !cartOpen && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            onClick={() => setCartOpen(true)}
+            className="btn-metal fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl px-6 py-3.5 font-semibold shadow-2xl"
+          >
+            <CartIcon />
+            Cart · {cartCount} item{cartCount === 1 ? "" : "s"} — checkout
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {cartOpen && address && rawBalance != null && (
           <CheckoutModal
-            product={checkout}
+            lines={cartLines}
             wallet={address}
-            tiers={tiers}
             balance={balance ?? 0}
+            tiers={tiers}
+            setQty={setQty}
             verify={verify}
-            onClose={() => setCheckout(null)}
+            onClose={() => setCartOpen(false)}
             onPaid={() => {
-              setCheckout(null);
+              saveCart([]); // items are committed once payment verifies
+              loadOrders();
+            }}
+            onDone={() => {
+              setCartOpen(false);
+              saveCart([]);
+              loadOrders();
+            }}
+          />
+        )}
+        {payOrder && address && (
+          <PayModal
+            order={payOrder}
+            wallet={address}
+            verify={verify}
+            onClose={() => setPayOrder(null)}
+            onPaid={() => {
+              const o = payOrder;
+              setPayOrder(null);
+              loadOrders();
+              setAddressOrder(o); // straight into the shipping form
+            }}
+          />
+        )}
+        {addressOrder && address && (
+          <AddressModal
+            order={addressOrder}
+            wallet={address}
+            verify={verify}
+            onClose={() => setAddressOrder(null)}
+            onDone={() => {
+              setAddressOrder(null);
               loadOrders();
             }}
           />
@@ -129,9 +272,7 @@ export default function ShopPage() {
       </AnimatePresence>
 
       <p className="mt-14 text-center text-xs leading-relaxed text-[var(--color-muted)]">
-        Not an exchange. Not a metal-backed token. Merch paid in $INFINITY.
-        <br />
-        Not financial advice.
+        Merch, not a metal-backed token. Not an exchange. Not financial advice.
       </p>
     </main>
   );
@@ -266,10 +407,12 @@ function TierBanner({
 
 function ProductGrid({
   products,
-  onBuy,
+  cart,
+  onAdd,
 }: {
   products: ShopProduct[];
-  onBuy: (p: ShopProduct) => void;
+  cart: CartLine[];
+  onAdd: (p: ShopProduct) => void;
 }) {
   if (products.length === 0) {
     return (
@@ -280,48 +423,58 @@ function ProductGrid({
   }
   return (
     <div className="grid gap-6 sm:grid-cols-2">
-      {products.map((p) => (
-        <article key={p.id} className="glass group overflow-hidden">
-          <div className="relative aspect-[4/3] overflow-hidden bg-[rgba(14,8,22,0.7)]">
-            {p.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={p.image_url}
-                alt={p.title}
-                className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-              />
-            ) : (
-              <MetalDisc />
-            )}
-            {!p.active && (
-              <span className="absolute left-4 top-4 rounded-full border border-[rgba(196,160,255,0.35)] bg-[rgba(10,6,16,0.75)] px-3 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-chrome)] backdrop-blur">
-                Coming soon
-              </span>
-            )}
-          </div>
-          <div className="p-6">
-            <div className="flex items-baseline justify-between gap-4">
-              <h3 className="font-display text-xl font-bold text-[var(--color-white-soft)]">
-                {p.title}
-              </h3>
-              <span className="font-mono text-lg text-[var(--color-chrome)]">
-                {fmt(p.price_usdg)} <span className="text-xs text-[var(--color-muted)]">USDG</span>
-              </span>
+      {products.map((p) => {
+        const inCart = cart.find((l) => l.product_id === p.id)?.qty ?? 0;
+        const canAdd = p.active && p.stock > inCart;
+        return (
+          <article key={p.id} className="glass group overflow-hidden">
+            <div className="relative aspect-[4/3] overflow-hidden bg-[rgba(14,8,22,0.7)]">
+              {p.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.image_url}
+                  alt={p.title}
+                  className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                />
+              ) : (
+                <MetalDisc />
+              )}
+              {!p.active && (
+                <span className="absolute left-4 top-4 rounded-full border border-[rgba(196,160,255,0.35)] bg-[rgba(10,6,16,0.75)] px-3 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-chrome)] backdrop-blur">
+                  Coming soon
+                </span>
+              )}
             </div>
-            {p.blurb && (
-              <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">{p.blurb}</p>
-            )}
-            <button
-              type="button"
-              disabled={!p.active || p.stock < 1}
-              onClick={() => onBuy(p)}
-              className="btn-metal mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {!p.active ? "Coming soon" : p.stock < 1 ? "Sold out" : "Buy with $INFINITY"}
-            </button>
-          </div>
-        </article>
-      ))}
+            <div className="p-6">
+              <div className="flex items-baseline justify-between gap-4">
+                <h3 className="font-display text-xl font-bold text-[var(--color-white-soft)]">
+                  {p.title}
+                </h3>
+                <span className="font-mono text-lg text-[var(--color-chrome)]">
+                  {fmt(p.price_usdg)} <span className="text-xs text-[var(--color-muted)]">USDG</span>
+                </span>
+              </div>
+              {p.blurb && (
+                <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">{p.blurb}</p>
+              )}
+              <button
+                type="button"
+                disabled={!canAdd}
+                onClick={() => onAdd(p)}
+                className="btn-metal mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {!p.active
+                  ? "Coming soon"
+                  : p.stock < 1
+                    ? "Sold out"
+                    : inCart > 0
+                      ? `In cart ×${inCart} — add another`
+                      : "Add to cart"}
+              </button>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -346,10 +499,29 @@ function MetalDisc() {
 
 /* ── My orders ─────────────────────────────────────────────────────────── */
 
-function OrdersList({ orders }: { orders: ShopOrder[] }) {
+function orderItemsSummary(o: ShopOrder): string {
+  const items = o.shop_order_items ?? [];
+  if (items.length > 0) {
+    return items
+      .map((i) => `${i.shop_products?.title ?? `#${i.product_id}`} ×${i.qty}`)
+      .join(", ");
+  }
+  return "—";
+}
+
+function OrdersList({
+  orders,
+  onAddAddress,
+  onResumePay,
+}: {
+  orders: ShopOrder[];
+  onAddAddress: (o: ShopOrder) => void;
+  onResumePay: (o: ShopOrder) => void;
+}) {
   if (orders.length === 0) return null;
   const label: Record<string, string> = {
-    awaiting_tx: "Awaiting payment",
+    awaiting_payment: "Awaiting payment",
+    paid_need_address: "Paid — address needed",
     paid_pending_ship: "Paid — pending ship",
     shipped: "Shipped",
     cancelled: "Cancelled",
@@ -361,25 +533,43 @@ function OrdersList({ orders }: { orders: ShopOrder[] }) {
       </h2>
       <div className="glass divide-y divide-[var(--color-stroke)]">
         {orders.map((o) => (
-          <div key={o.id} className="flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-4 text-sm">
+          <div key={o.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 text-sm">
             <span className="font-mono text-[var(--color-muted)]">#{o.id}</span>
             <span className="font-medium text-[var(--color-white-soft)]">
-              {o.shop_products?.title ?? `Product ${o.product_id}`} × {o.qty}
+              {orderItemsSummary(o)}
             </span>
             <span className="font-mono text-xs text-[var(--color-chrome)]">
               {formatInfinityRaw(o.infinity_raw_due)} INFINITY
             </span>
-            <span
-              className={`ml-auto rounded-full border px-3 py-1 font-mono text-[0.65rem] ${
-                o.status === "shipped"
-                  ? "border-[var(--color-live)]/40 text-[var(--color-live)]"
-                  : o.status === "paid_pending_ship"
-                    ? "border-[rgba(196,160,255,0.4)] text-[var(--color-chrome)]"
-                    : "border-[var(--color-stroke)] text-[var(--color-muted)]"
-              }`}
-            >
-              {label[o.status] ?? o.status}
-            </span>
+            {o.status === "awaiting_payment" ? (
+              <button
+                type="button"
+                onClick={() => onResumePay(o)}
+                className="btn-metal ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold"
+              >
+                Complete payment
+              </button>
+            ) : o.status === "paid_need_address" ? (
+              <button
+                type="button"
+                onClick={() => onAddAddress(o)}
+                className="btn-metal ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold"
+              >
+                Add shipping address
+              </button>
+            ) : (
+              <span
+                className={`ml-auto rounded-full border px-3 py-1 font-mono text-[0.65rem] ${
+                  o.status === "shipped"
+                    ? "border-[var(--color-live)]/40 text-[var(--color-live)]"
+                    : o.status === "paid_pending_ship"
+                      ? "border-[rgba(196,160,255,0.4)] text-[var(--color-chrome)]"
+                      : "border-[var(--color-stroke)] text-[var(--color-muted)]"
+                }`}
+              >
+                {label[o.status] ?? o.status}
+              </span>
+            )}
             {o.tracking_note && (
               <span className="w-full text-xs text-[var(--color-muted)]">
                 Tracking: {o.tracking_note}
@@ -392,34 +582,39 @@ function OrdersList({ orders }: { orders: ShopOrder[] }) {
   );
 }
 
-/* ── Checkout modal ────────────────────────────────────────────────────── */
+/* ── Checkout modal: cart → pay → ship ─────────────────────────────────── */
 
-type Quote = { ok: boolean; priceUsdg: number | null };
+type Quote = { ok: boolean; priceUsdg: number | null; shippingUsdg?: number };
+type CartLineFull = CartLine & { product: ShopProduct };
+type CreatedOrder = ShopOrder;
 
 function CheckoutModal({
-  product,
+  lines,
   wallet,
-  tiers,
   balance,
+  tiers,
+  setQty,
   verify,
   onClose,
   onPaid,
+  onDone,
 }: {
-  product: ShopProduct;
+  lines: CartLineFull[];
   wallet: string;
-  tiers: ShopTier[];
   balance: number;
+  tiers: ShopTier[];
+  setQty: (id: number, qty: number) => void;
   verify: () => Promise<void>;
   onClose: () => void;
   onPaid: () => void;
+  onDone: () => void;
 }) {
-  const [qty, setQty] = useState(1);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [order, setOrder] = useState<ShopOrder | null>(null);
+  const [order, setOrder] = useState<CreatedOrder | null>(null);
+  const [step, setStep] = useState<"cart" | "pay" | "ship">("cart");
   const [txHash, setTxHash] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
   useEffect(() => {
     fetch("/api/shop/quote")
@@ -430,10 +625,12 @@ function CheckoutModal({
 
   const tier = tierFor(balance, tiers);
   const pct = tier?.percent ?? 0;
-  const listUsdg = product.price_usdg * qty;
-  const dueUsdg = listUsdg * (1 - pct / 100);
+  const shipping = quote?.shippingUsdg ?? 6;
+  const merchList = lines.reduce((s, l) => s + l.product.price_usdg * l.qty, 0);
+  const merchDue = merchList * (1 - pct / 100);
+  const totalUsdg = merchDue + shipping;
   const estInfinity =
-    quote?.ok && quote.priceUsdg ? Math.ceil(dueUsdg / quote.priceUsdg) : null;
+    quote?.ok && quote.priceUsdg ? Math.ceil(totalUsdg / quote.priceUsdg) : null;
 
   // Ensure a usable proof exists; re-sign once if the session lacks one.
   const proof = async () => {
@@ -446,7 +643,7 @@ function CheckoutModal({
   };
 
   const createOrder = async () => {
-    if (busy) return;
+    if (busy || lines.length === 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -458,13 +655,13 @@ function CheckoutModal({
         body: JSON.stringify({
           action: "create",
           ...p,
-          product_id: product.id,
-          qty,
+          items: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })),
         }),
       });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error ?? "Could not create order.");
-      setOrder(j.order as ShopOrder);
+      setOrder(j.order as CreatedOrder);
+      setStep("pay");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -491,8 +688,8 @@ function CheckoutModal({
       });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error ?? "Payment not verified.");
-      setDone(true);
-      setTimeout(onPaid, 2200);
+      onPaid();
+      setStep("ship");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -518,7 +715,7 @@ function CheckoutModal({
       >
         <div className="flex items-start justify-between">
           <h2 className="font-display text-xl font-bold text-[var(--color-white-soft)]">
-            {product.title}
+            {step === "cart" ? "Cart" : step === "pay" ? "Pay with $INFINITY" : "Where to send it"}
           </h2>
           <button
             type="button"
@@ -530,47 +727,48 @@ function CheckoutModal({
           </button>
         </div>
 
-        {done ? (
-          <div className="py-8 text-center">
-            <p className="font-display text-lg font-bold text-[var(--color-live)]">
-              Payment verified
-            </p>
-            <p className="mt-2 text-sm text-[var(--color-muted)]">
-              Order #{order?.id} is paid_pending_ship. The creator ships it.
-            </p>
-          </div>
-        ) : !order ? (
+        {step === "cart" && (
           <>
-            <div className="mt-5 flex items-center gap-3">
-              <span className="text-sm text-[var(--color-muted)]">Qty</span>
-              <div className="flex items-center rounded-xl border border-[var(--color-stroke)]">
-                <button
-                  type="button"
-                  className="px-3 py-1.5 text-lg text-[var(--color-chrome)] disabled:opacity-30"
-                  disabled={qty <= 1}
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+            <div className="mt-4 space-y-2">
+              {lines.map((l) => (
+                <div
+                  key={l.product_id}
+                  className="flex items-center gap-3 rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.5)] px-4 py-3"
                 >
-                  −
-                </button>
-                <span className="w-8 text-center font-mono text-sm">{qty}</span>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 text-lg text-[var(--color-chrome)] disabled:opacity-30"
-                  disabled={qty >= product.stock}
-                  onClick={() => setQty((q) => Math.min(product.stock, q + 1))}
-                >
-                  +
-                </button>
-              </div>
-              <span className="text-xs text-[var(--color-muted)]">
-                {product.stock} in stock
-              </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--color-white-soft)]">
+                      {l.product.title}
+                    </p>
+                    <p className="font-mono text-xs text-[var(--color-muted)]">
+                      {fmt(l.product.price_usdg, 2)} USDG
+                    </p>
+                  </div>
+                  <div className="flex items-center rounded-lg border border-[var(--color-stroke)]">
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 text-[var(--color-chrome)]"
+                      onClick={() => setQty(l.product_id, l.qty - 1)}
+                    >
+                      −
+                    </button>
+                    <span className="w-6 text-center font-mono text-xs">{l.qty}</span>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 text-[var(--color-chrome)] disabled:opacity-30"
+                      disabled={l.qty >= l.product.stock}
+                      onClick={() => setQty(l.product_id, l.qty + 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <dl className="mt-5 space-y-2 border-t border-[var(--color-stroke)] pt-5 text-sm">
               <div className="flex justify-between">
-                <dt className="text-[var(--color-muted)]">List price</dt>
-                <dd className="font-mono">{fmt(listUsdg, 2)} USDG</dd>
+                <dt className="text-[var(--color-muted)]">Subtotal</dt>
+                <dd className="font-mono">{fmt(merchList, 2)} USDG</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-[var(--color-muted)]">
@@ -578,7 +776,15 @@ function CheckoutModal({
                 </dt>
                 <dd className="font-mono text-[var(--color-live)]">−{pct}%</dd>
               </div>
-              <div className="flex justify-between border-t border-[var(--color-stroke)] pt-2">
+              <div className="flex justify-between">
+                <dt className="text-[var(--color-muted)]">Flat shipping</dt>
+                <dd className="font-mono">{fmt(shipping, 2)} USDG</dd>
+              </div>
+              <div className="flex justify-between border-t border-[var(--color-stroke)] pt-2 font-semibold">
+                <dt className="text-[var(--color-white-soft)]">Total</dt>
+                <dd className="font-mono">{fmt(totalUsdg, 2)} USDG</dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-[var(--color-muted)]">Due in $INFINITY</dt>
                 <dd className="font-mono text-[var(--color-chrome)]">
                   {estInfinity != null ? `≈ ${fmt(estInfinity)}` : "…"}
@@ -590,68 +796,371 @@ function CheckoutModal({
             <button
               type="button"
               onClick={createOrder}
-              disabled={busy}
+              disabled={busy || lines.length === 0}
               className="btn-metal mt-6 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
             >
               {busy ? "Reserving…" : "Reserve order — get payment details"}
             </button>
             <p className="mt-3 text-center text-xs leading-relaxed text-[var(--color-muted)]">
-              You send $INFINITY directly from your wallet. No approvals, the
-              site never pulls tokens.
+              Pay in $INFINITY first. Then we ask where to send it. We do not
+              publish your address.
             </p>
-          </>
-        ) : (
-          <>
-            <p className="mt-4 text-sm leading-relaxed text-[var(--color-muted)]">
-              Send <span className="font-semibold text-[var(--color-white-soft)]">exactly</span> this
-              amount on Robinhood Chain:
-            </p>
-            <div className="mt-4 space-y-3">
-              <CopyRow
-                label="$INFINITY due (exact)"
-                display={`${rawToDecimalString(order.infinity_raw_due)} INFINITY`}
-                copy={rawToDecimalString(order.infinity_raw_due)}
-              />
-              <CopyRow
-                label="To (shop wallet)"
-                display={truncateAddress(SHOP_WALLET, 8)}
-                copy={SHOP_WALLET}
-              />
-              <CopyRow
-                label="$INFINITY contract"
-                display={truncateAddress(TOKEN.address, 8)}
-                copy={TOKEN.address}
-              />
-            </div>
-            <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
-              After sending, paste the transaction hash:
-            </p>
-            <input
-              type="text"
-              value={txHash}
-              onChange={(e) => setTxHash(e.target.value)}
-              placeholder="0x…"
-              className="mt-2 w-full rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.8)] px-4 py-3 font-mono text-xs text-[var(--color-white-soft)] outline-none placeholder:text-[var(--color-muted)] focus:border-[rgba(196,160,255,0.45)]"
-            />
-            {error && <p className="mt-3 text-sm text-[var(--color-sell)]">{error}</p>}
-            <button
-              type="button"
-              onClick={submitTx}
-              disabled={busy || !/^0x[0-9a-fA-F]{64}$/.test(txHash.trim())}
-              className="btn-metal mt-4 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
-            >
-              {busy ? "Checking on-chain…" : "I sent it — verify payment"}
-            </button>
-            <a
-              href={`${CHAIN.explorer}/address/${SHOP_WALLET}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 block text-center font-mono text-xs text-[var(--color-chrome)] underline decoration-[var(--color-stroke)] underline-offset-4 hover:text-[var(--color-white-soft)]"
-            >
-              View shop wallet on Blockscout ↗
-            </a>
           </>
         )}
+
+        {step === "pay" && order && (
+          <PayStep
+            order={order}
+            txHash={txHash}
+            setTxHash={setTxHash}
+            busy={busy}
+            error={error}
+            onSubmit={submitTx}
+          />
+        )}
+
+        {step === "ship" && order && (
+          <ShipmentForm
+            orderId={order.id}
+            proof={proof}
+            busy={busy}
+            setBusy={setBusy}
+            error={error}
+            setError={setError}
+            onDone={onDone}
+          />
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── Shipping form (shared by checkout step + My orders) ───────────────── */
+
+function ShipmentForm({
+  orderId,
+  proof,
+  busy,
+  setBusy,
+  error,
+  setError,
+  onDone,
+}: {
+  orderId: number;
+  proof: () => Promise<{ wallet: string; iso: string; signature: string } | null>;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  error: string | null;
+  setError: (e: string | null) => void;
+  onDone: () => void;
+}) {
+  const [f, setF] = useState<ShipmentInput>({ ...EMPTY_SHIPMENT });
+  const [saved, setSaved] = useState(false);
+
+  const field = (k: keyof ShipmentInput, label: string, required = false) => (
+    <label className="block">
+      <span className="mb-1 block font-mono text-[0.6rem] uppercase tracking-[0.15em] text-[var(--color-muted)]">
+        {label}
+        {required ? " *" : ""}
+      </span>
+      <input
+        type="text"
+        value={f[k]}
+        onChange={(e) => setF({ ...f, [k]: e.target.value })}
+        maxLength={200}
+        className="w-full rounded-lg border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.8)] px-3 py-2.5 text-sm text-[var(--color-white-soft)] outline-none placeholder:text-[var(--color-muted)] focus:border-[rgba(196,160,255,0.45)]"
+      />
+    </label>
+  );
+
+  const submit = async () => {
+    if (busy) return;
+    const vErr = validateShipment(f);
+    if (vErr) {
+      setError(vErr);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await proof();
+      if (!p) throw new Error("Sign in first — no verified session.");
+      const res = await fetch("/api/shop/shipment", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "set", ...p, order_id: orderId, ...f }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error ?? "Could not save address.");
+      setSaved(true);
+      setTimeout(onDone, 1600);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (saved) {
+    return (
+      <div className="py-8 text-center">
+        <p className="font-display text-lg font-bold text-[var(--color-live)]">Order complete</p>
+        <p className="mt-2 text-sm text-[var(--color-muted)]">
+          Payment verified, address saved — your order is pending shipment.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+        Payment verified. Where should it ship? Your address is stored
+        encrypted and is never public.
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="col-span-2">{field("recipient_name", "Recipient name", true)}</div>
+        <div className="col-span-2">{field("line1", "Address line 1", true)}</div>
+        <div className="col-span-2">{field("line2", "Address line 2")}</div>
+        {field("city", "City", true)}
+        {field("region", "State / region")}
+        {field("postal", "Postal code", true)}
+        {field("country", "Country", true)}
+        <div className="col-span-2">{field("phone", "Phone (optional)")}</div>
+      </div>
+      {error && <p className="mt-3 text-sm text-[var(--color-sell)]">{error}</p>}
+      <button
+        type="button"
+        onClick={submit}
+        disabled={busy}
+        className="btn-metal mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
+      >
+        {busy ? "Saving…" : "Save shipping address"}
+      </button>
+    </>
+  );
+}
+
+/* ── Standalone address modal for paid_need_address orders ─────────────── */
+
+function AddressModal({
+  order,
+  wallet,
+  verify,
+  onClose,
+  onDone,
+}: {
+  order: ShopOrder;
+  wallet: string;
+  verify: () => Promise<void>;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const proof = async () => {
+    let p = sessionProof();
+    if (!p || p.wallet !== wallet.toLowerCase()) {
+      await verify();
+      p = sessionProof();
+    }
+    return p;
+  };
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(7,4,12,0.8)] p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        className="glass max-h-[90vh] w-full max-w-md overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <h2 className="font-display text-xl font-bold text-[var(--color-white-soft)]">
+            Shipping for order #{order.id}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="text-[var(--color-muted)] transition hover:text-[var(--color-white-soft)]">
+            ✕
+          </button>
+        </div>
+        <ShipmentForm
+          orderId={order.id}
+          proof={proof}
+          busy={busy}
+          setBusy={setBusy}
+          error={error}
+          setError={setError}
+          onDone={onDone}
+        />
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── Pay step (shared by checkout + "complete payment" resume) ─────────── */
+
+function PayStep({
+  order,
+  txHash,
+  setTxHash,
+  busy,
+  error,
+  onSubmit,
+}: {
+  order: ShopOrder;
+  txHash: string;
+  setTxHash: (v: string) => void;
+  busy: boolean;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  return (
+    <>
+      <p className="mt-4 text-sm leading-relaxed text-[var(--color-muted)]">
+        Send <span className="font-semibold text-[var(--color-white-soft)]">exactly</span> this
+        amount (merch + shipping) on Robinhood Chain:
+      </p>
+      <div className="mt-4 space-y-3">
+        <CopyRow
+          label="$INFINITY due (exact)"
+          display={`${rawToDecimalString(order.infinity_raw_due)} INFINITY`}
+          copy={rawToDecimalString(order.infinity_raw_due)}
+        />
+        <CopyRow
+          label="To (shop wallet)"
+          display={truncateAddress(SHOP_WALLET, 8)}
+          copy={SHOP_WALLET}
+        />
+        <CopyRow
+          label="$INFINITY contract"
+          display={truncateAddress(TOKEN.address, 8)}
+          copy={TOKEN.address}
+        />
+      </div>
+      <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
+        After sending, paste the transaction hash:
+      </p>
+      <input
+        type="text"
+        value={txHash}
+        onChange={(e) => setTxHash(e.target.value)}
+        placeholder="0x…"
+        className="mt-2 w-full rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.8)] px-4 py-3 font-mono text-xs text-[var(--color-white-soft)] outline-none placeholder:text-[var(--color-muted)] focus:border-[rgba(196,160,255,0.45)]"
+      />
+      {error && <p className="mt-3 text-sm text-[var(--color-sell)]">{error}</p>}
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={busy || !/^0x[0-9a-fA-F]{64}$/.test(txHash.trim())}
+        className="btn-metal mt-4 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
+      >
+        {busy ? "Checking on-chain…" : "I sent it — verify payment"}
+      </button>
+      <a
+        href={`${CHAIN.explorer}/address/${SHOP_WALLET}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 block text-center font-mono text-xs text-[var(--color-chrome)] underline decoration-[var(--color-stroke)] underline-offset-4 hover:text-[var(--color-white-soft)]"
+      >
+        View shop wallet on Blockscout ↗
+      </a>
+    </>
+  );
+}
+
+// Resume payment for an awaiting_payment order from "My orders".
+function PayModal({
+  order,
+  wallet,
+  verify,
+  onClose,
+  onPaid,
+}: {
+  order: ShopOrder;
+  wallet: string;
+  verify: () => Promise<void>;
+  onClose: () => void;
+  onPaid: () => void;
+}) {
+  const [txHash, setTxHash] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const proof = async () => {
+    let p = sessionProof();
+    if (!p || p.wallet !== wallet.toLowerCase()) {
+      await verify();
+      p = sessionProof();
+    }
+    return p;
+  };
+
+  const submitTx = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await proof();
+      if (!p) throw new Error("Sign in first — no verified session.");
+      const res = await fetch("/api/shop/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "pay",
+          ...p,
+          order_id: order.id,
+          tx_hash: txHash.trim(),
+        }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error ?? "Payment not verified.");
+      onPaid();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(7,4,12,0.8)] p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        className="glass max-h-[90vh] w-full max-w-md overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <h2 className="font-display text-xl font-bold text-[var(--color-white-soft)]">
+            Pay order #{order.id}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="text-[var(--color-muted)] transition hover:text-[var(--color-white-soft)]">
+            ✕
+          </button>
+        </div>
+        <PayStep
+          order={order}
+          txHash={txHash}
+          setTxHash={setTxHash}
+          busy={busy}
+          error={error}
+          onSubmit={submitTx}
+        />
       </motion.div>
     </motion.div>
   );
@@ -685,6 +1194,16 @@ function CopyRow({ label, display, copy }: { label: string; display: string; cop
         {copied ? "Copied" : "Copy"}
       </span>
     </button>
+  );
+}
+
+function CartIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="9" cy="20" r="1.6" />
+      <circle cx="17" cy="20" r="1.6" />
+      <path d="M3 3h2l2.4 12h10.4l2-8H6.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

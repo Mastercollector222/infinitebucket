@@ -152,10 +152,22 @@ type Run = (action: string, payload?: Record<string, unknown>) => Promise<Record
 
 /* ── Orders ────────────────────────────────────────────────────────────── */
 
+function itemsSummary(o: ShopOrder): string {
+  const items = o.shop_order_items ?? [];
+  if (items.length === 0) {
+    // Legacy single-item rows (pre-cart schema).
+    return o.qty != null ? `product #${o.product_id} ×${o.qty}` : "—";
+  }
+  return items
+    .map((i) => `${i.shop_products?.title ?? `#${i.product_id}`} ×${i.qty}`)
+    .join(", ");
+}
+
 function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [filter, setFilter] = useState("");
   const [tracking, setTracking] = useState<Record<number, string>>({});
+  const [shipments, setShipments] = useState<Record<number, Record<string, string> | null>>({});
 
   const load = useCallback(async () => {
     const j = await run("list_orders", filter ? { status: filter } : {});
@@ -169,7 +181,7 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
   return (
     <div className="glass p-5">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {["", "awaiting_tx", "paid_pending_ship", "shipped", "cancelled"].map((s) => (
+        {["", "awaiting_payment", "paid_need_address", "paid_pending_ship", "shipped", "cancelled"].map((s) => (
           <button
             key={s || "all"}
             type="button"
@@ -204,9 +216,10 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <span className="font-mono text-[var(--color-muted)]">#{o.id}</span>
                 <span className="font-medium text-[var(--color-white-soft)]">
-                  {o.shop_products?.title ?? `Product ${o.product_id}`} × {o.qty}
+                  {itemsSummary(o)}
                 </span>
                 <span className="font-mono text-xs text-[var(--color-chrome)]">
+                  {o.total_usdg ?? o.usdg_due} USDG ·{" "}
                   {formatInfinityRaw(o.infinity_raw_due)} INFINITY · {o.discount_pct}% off
                 </span>
                 <span className="ml-auto font-mono text-[0.65rem] uppercase tracking-wider text-[var(--color-muted)]">
@@ -227,6 +240,46 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
                 )}
                 <span>{new Date(o.created_at).toLocaleString()}</span>
               </div>
+              {(o.status === "paid_pending_ship" || o.status === "shipped") && (
+                <div className="mt-3">
+                  {shipments[o.id] === undefined ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const j = await run("get_shipment", { order_id: o.id });
+                        if (j) {
+                          setShipments((s) => ({
+                            ...s,
+                            [o.id]: (j.shipment as Record<string, string> | null) ?? null,
+                          }));
+                        }
+                      }}
+                      className="font-mono text-xs text-[var(--color-chrome)] hover:underline"
+                    >
+                      View shipping address
+                    </button>
+                  ) : shipments[o.id] === null ? (
+                    <p className="font-mono text-xs text-[var(--color-muted)]">
+                      No address submitted yet.
+                    </p>
+                  ) : (
+                    <div className="rounded-lg border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3 font-mono text-xs leading-relaxed text-[var(--color-chrome)]">
+                      <p>{shipments[o.id]!.recipient_name}</p>
+                      <p>
+                        {shipments[o.id]!.line1}
+                        {shipments[o.id]!.line2 ? `, ${shipments[o.id]!.line2}` : ""}
+                      </p>
+                      <p>
+                        {shipments[o.id]!.city}
+                        {shipments[o.id]!.region ? `, ${shipments[o.id]!.region}` : ""}{" "}
+                        {shipments[o.id]!.postal}
+                      </p>
+                      <p>{shipments[o.id]!.country}</p>
+                      {shipments[o.id]!.phone && <p>Phone: {shipments[o.id]!.phone}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
               {o.status === "paid_pending_ship" && (
                 <div className="mt-3 flex gap-2">
                   <input
@@ -256,7 +309,7 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
                   </button>
                 </div>
               )}
-              {o.status === "awaiting_tx" && (
+              {o.status === "awaiting_payment" && (
                 <button
                   type="button"
                   onClick={async () => {
