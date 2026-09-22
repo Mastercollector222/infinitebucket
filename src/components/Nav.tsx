@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { LINKS } from "@/lib/constants";
-import { truncateAddress } from "@/lib/format";
+import { formatUsdPrice, truncateAddress } from "@/lib/format";
 import { useMarketContext } from "./MarketContext";
 import { WalletButton } from "./WalletButton";
 
@@ -73,7 +73,7 @@ export function Nav() {
             </span>
             {data && (
               <span className="font-mono text-xs text-[var(--color-chrome)]">
-                {data.priceUsd}
+                {formatUsdPrice(data.priceUsd)}
               </span>
             )}
           </div>
@@ -163,7 +163,7 @@ export function Nav() {
                   </span>
                   {data && (
                     <span className="font-mono text-sm text-[var(--color-chrome)]">
-                      {data.priceUsd}
+                      {formatUsdPrice(data.priceUsd)}
                     </span>
                   )}
                 </div>

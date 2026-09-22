@@ -22,6 +22,20 @@ export function formatUsd(value?: number | null, opts?: { compact?: boolean }): 
   }).format(value);
 }
 
+// Short USD price for the header LIVE chip: >= 0.01 → 2–4 decimals,
+// < 0.01 → exactly 8 decimals. Never more than 8 fractional digits and
+// never scientific notation (Intl always expands it).
+export function formatUsdPrice(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const tiny = Math.abs(value) < 0.01;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: tiny ? 8 : 2,
+    maximumFractionDigits: tiny ? 8 : 4,
+  }).format(value);
+}
+
 export function compact(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("en-US", {
