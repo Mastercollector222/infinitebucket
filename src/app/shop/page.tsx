@@ -378,7 +378,9 @@ function orderItemsSummary(o: ShopOrder): string {
   const items = o.shop_order_items ?? [];
   if (items.length > 0) {
     return items
-      .map((i) => `${i.shop_products?.title ?? `#${i.product_id}`} ×${i.qty}`)
+      .map(
+        (i) => `${i.title || i.shop_products?.title || `#${i.product_id}`} ×${i.qty}`,
+      )
       .join(", ");
   }
   return "—";

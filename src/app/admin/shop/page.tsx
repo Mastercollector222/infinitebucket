@@ -159,7 +159,9 @@ function itemsSummary(o: ShopOrder): string {
     return o.qty != null ? `product #${o.product_id} ×${o.qty}` : "—";
   }
   return items
-    .map((i) => `${i.shop_products?.title ?? `#${i.product_id}`} ×${i.qty}`)
+    .map(
+      (i) => `${i.title || i.shop_products?.title || `#${i.product_id}`} ×${i.qty}`,
+    )
     .join(", ");
 }
 

@@ -119,7 +119,14 @@ export async function POST(req: Request) {
       const id = num(body.id);
       if (id == null) return fail(400, "Missing product id.");
       const { error } = await sb.from("shop_products").delete().eq("id", id);
-      if (error) return fail(502, error.message);
+      if (error) {
+        return fail(
+          error.code === "23503" ? 409 : 502,
+          error.code === "23503"
+            ? "Other rows still reference this product — set it inactive instead."
+            : error.message,
+        );
+      }
       return NextResponse.json({ ok: true });
     }
 

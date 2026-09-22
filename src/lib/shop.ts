@@ -54,9 +54,10 @@ export type ShopOrderStatus =
 export type ShopOrderItem = {
   id: number;
   order_id: number;
-  product_id: number;
+  product_id: number | null; // null after the product is deleted (FK SET NULL)
   qty: number;
   price_usdg: number;
+  title?: string; // snapshot at order time — survives product deletion
   shop_products?: { title: string } | null;
 };
 

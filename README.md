@@ -199,7 +199,9 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
   and mark orders shipped with a tracking note.
 - Migrations: `supabase/shop.sql`, then `supabase/shop_cart.sql` (cart +
   shipments + new order statuses), then `supabase/shop_per_item.sql`
-  (per-item gates + descriptions). All safe to re-run.
+  (per-item gates + descriptions), then `supabase/shop_product_snapshot.sql`
+  (title snapshot on order lines + `ON DELETE SET NULL` product FKs — lets
+  products be deleted without losing order history). All safe to re-run.
 - Access model: `shop_tiers`/`shop_products`/`shop_settings` are public-read
   via RLS. `shop_orders` has no anon access — all writes and order reads go
   through `/api/shop/orders` and `/api/admin/shop`, which verify the wallet

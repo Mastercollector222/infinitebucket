@@ -157,6 +157,7 @@ export async function POST(req: Request) {
         product_id: pid,
         qty,
         price_usdg: byId.get(pid)?.price_usdg ?? 0,
+        title: byId.get(pid)?.title ?? `#${pid}`,
       })),
     );
     if (iErr) {
