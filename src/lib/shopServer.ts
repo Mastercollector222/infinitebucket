@@ -3,14 +3,16 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { getAddress, verifyMessage } from "viem";
-import { loginMessage } from "./auth";
+import { actionMessage, loginMessage } from "./auth";
 import { CHAIN, POOL, TOKEN } from "./constants";
 import { isAdmin } from "./shop";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const ACTION_TTL_MS = 10 * 60 * 1000; // action-bound proofs: 10 minutes
+const FUTURE_SKEW_MS = 5 * 60 * 1000; // never accept signatures dated ahead
 
-// Service-role client — the ONLY writer to shop_* tables. Server-side env
-// only; it must never carry a NEXT_PUBLIC_ prefix or ship to the browser.
+// Service-role client — the ONLY writer to shop_* + users tables. Server-side
+// env only; it must never carry a NEXT_PUBLIC_ prefix or ship to the browser.
 export function serviceSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,7 +23,8 @@ export function serviceSupabase(): SupabaseClient | null {
 }
 
 // Verify a stored login proof: personal_sign over loginMessage(wallet, iso),
-// still inside the 24h session window. Returns the lowercase wallet or null.
+// inside the 24h session window and never future-dated. Returns the
+// lowercase wallet or null.
 export async function verifyWalletProof(
   wallet: string,
   iso: string,
@@ -30,9 +33,10 @@ export async function verifyWalletProof(
   try {
     const checksum = getAddress(wallet);
     const signedAt = Date.parse(iso);
-    if (!Number.isFinite(signedAt) || Math.abs(Date.now() - signedAt) > SESSION_TTL_MS) {
-      return null;
-    }
+    if (!Number.isFinite(signedAt)) return null;
+    const now = Date.now();
+    if (signedAt > now + FUTURE_SKEW_MS) return null; // no future-dated proofs
+    if (now - signedAt > SESSION_TTL_MS) return null;
     const ok = await verifyMessage({
       address: checksum,
       message: loginMessage(checksum, iso),
@@ -42,6 +46,55 @@ export async function verifyWalletProof(
   } catch {
     return null;
   }
+}
+
+// Verify an action-bound proof: personal_sign over
+// actionMessage(action, wallet, orderId, iso). Required for payment marks
+// and PII access — the 24h login session alone is never enough for those.
+export async function verifyActionProof(
+  wallet: string,
+  iso: string,
+  signature: string,
+  action: string,
+  orderId: number,
+): Promise<string | null> {
+  try {
+    if (!Number.isInteger(orderId) || orderId <= 0) return null;
+    const checksum = getAddress(wallet);
+    const signedAt = Date.parse(iso);
+    if (!Number.isFinite(signedAt)) return null;
+    const now = Date.now();
+    if (signedAt > now + FUTURE_SKEW_MS) return null;
+    if (now - signedAt > ACTION_TTL_MS) return null;
+    const ok = await verifyMessage({
+      address: checksum,
+      message: actionMessage(action, checksum, orderId, iso),
+      signature: signature as `0x${string}`,
+    });
+    return ok ? checksum.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Per-key sliding-window rate limiter (in-memory — each serverless instance
+// enforces its own share; enough to stop script spam).
+const buckets = new Map<string, number[]>();
+export function rateLimit(key: string, max: number, windowMs = 3_600_000): boolean {
+  const now = Date.now();
+  const hits = (buckets.get(key) ?? []).filter((t) => now - t < windowMs);
+  if (hits.length >= max) {
+    buckets.set(key, hits);
+    return false;
+  }
+  hits.push(now);
+  buckets.set(key, hits);
+  if (buckets.size > 10_000) {
+    for (const [k, v] of buckets) {
+      if (v.every((t) => now - t >= windowMs)) buckets.delete(k);
+    }
+  }
+  return true;
 }
 
 // Verify the proof AND that the signer is in NEXT_PUBLIC_ADMIN_WALLETS.
@@ -193,59 +246,40 @@ export type TxTransfer = {
   value: bigint;
 };
 
-// ERC-20 transfers contained in a tx, per Blockscout. Tries the inline
-// token_transfers field first, then the dedicated endpoint.
-export async function txTransfers(hash: string): Promise<{
-  ok: boolean;
-  status: string | null;
+// keccak256("Transfer(address,address,uint256)")
+const TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+type RpcLog = { address?: string; topics?: string[]; data?: string };
+
+// Verify a payment ON-CHAIN via eth_getTransactionReceipt on chain 4663 —
+// the node's receipt is the source of truth, never a third-party API.
+// found=false → not mined yet; success=false → reverted.
+export async function txReceiptTransfers(hash: string): Promise<{
+  found: boolean;
+  success: boolean;
   transfers: TxTransfer[];
 }> {
-  const parse = (rows: unknown[]): TxTransfer[] =>
-    rows
-      .map((r) => {
-        const t = r as Record<string, unknown>;
-        const token = t.token as { address_hash?: string; address?: string } | undefined;
-        const from = t.from as { hash?: string } | undefined;
-        const to = t.to as { hash?: string } | undefined;
-        const total = t.total as { value?: string } | undefined;
-        const tokenAddr = token?.address_hash ?? token?.address;
-        const value = total?.value ?? (t.value as string | undefined);
-        if (!tokenAddr || !from?.hash || !to?.hash || value == null) return null;
-        try {
-          return {
-            token: tokenAddr.toLowerCase(),
-            from: from.hash.toLowerCase(),
-            to: to.hash.toLowerCase(),
-            value: BigInt(value),
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter((x): x is TxTransfer => x !== null);
-
-  const res = await fetch(`${CHAIN.explorer}/api/v2/transactions/${hash}`, {
-    headers: BS_HEADERS,
-    cache: "no-store",
-  });
-  if (!res.ok) return { ok: false, status: null, transfers: [] };
-  const j = (await res.json()) as Record<string, unknown>;
-  const status = typeof j.status === "string" ? j.status.toLowerCase() : null;
-  let rows = (j.token_transfers as unknown[] | undefined) ?? [];
-
-  if (rows.length === 0) {
+  const receipt = await rpc<{
+    status?: string;
+    logs?: RpcLog[];
+  } | null>("eth_getTransactionReceipt", [hash]);
+  if (!receipt) return { found: false, success: false, transfers: [] };
+  const transfers: TxTransfer[] = [];
+  for (const log of receipt.logs ?? []) {
+    const topics = log.topics ?? [];
+    if (topics[0]?.toLowerCase() !== TRANSFER_TOPIC || topics.length < 3) continue;
+    if (!log.address || typeof log.data !== "string") continue;
     try {
-      const r2 = await fetch(
-        `${CHAIN.explorer}/api/v2/transactions/${hash}/token-transfers`,
-        { headers: BS_HEADERS, cache: "no-store" },
-      );
-      if (r2.ok) {
-        const j2 = (await r2.json()) as { items?: unknown[] };
-        rows = j2.items ?? [];
-      }
+      transfers.push({
+        token: log.address.toLowerCase(),
+        from: `0x${topics[1].slice(26)}`.toLowerCase(),
+        to: `0x${topics[2].slice(26)}`.toLowerCase(),
+        value: BigInt(log.data),
+      });
     } catch {
-      /* keep empty */
+      /* skip malformed log */
     }
   }
-  return { ok: true, status, transfers: parse(rows) };
+  return { found: true, success: receipt.status === "0x1", transfers };
 }

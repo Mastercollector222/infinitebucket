@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { getAddress, verifyMessage } from "viem";
 import {
   AVATAR_MAX_BYTES,
@@ -8,6 +7,8 @@ import {
   uploadAvatar,
 } from "@/lib/cloudinary";
 import { avatarMessage, loginMessage } from "@/lib/auth";
+import { CLOUDINARY_PREFIX } from "@/lib/profile";
+import { rateLimit, serviceSupabase } from "@/lib/shopServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,8 +78,16 @@ export async function POST(req: Request) {
 
   const signedAt = Date.parse(iso);
   const ttl = kind === "avatar" ? SIGNATURE_TTL_MS : SESSION_TTL_MS;
-  if (!Number.isFinite(signedAt) || Math.abs(Date.now() - signedAt) > ttl) {
+  if (
+    !Number.isFinite(signedAt) ||
+    signedAt > Date.now() + 5 * 60 * 1000 || // never future-dated
+    Date.now() - signedAt > ttl
+  ) {
     return fail(401, "Signature is stale — sign again.");
+  }
+
+  if (!rateLimit(`avatar:${wallet}`, 10)) {
+    return fail(429, "Too many uploads — try again later.");
   }
 
   // Images only, never svg — mime whitelist, not extension trust.
@@ -100,18 +109,19 @@ export async function POST(req: Request) {
       wallet,
       `data:${file.type};base64,${buffer.toString("base64")}`,
     );
-  } catch (e) {
-    const msg = (e as { message?: string }).message ?? "unknown";
-    console.error("[avatar] cloudinary upload failed:", msg);
-    return fail(502, `Cloudinary rejected the upload: ${msg}`);
+  } catch {
+    // Never log provider response bodies — fixed string only.
+    console.error("[avatar] cloudinary upload failed");
+    return fail(502, "Cloudinary rejected the upload.");
+  }
+  if (!avatar_url.startsWith(CLOUDINARY_PREFIX)) {
+    return fail(502, "Upload returned an unexpected URL.");
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  const supabase = serviceSupabase();
+  if (!supabase) {
     return fail(503, "Account storage is not configured.");
   }
-  const supabase = createClient(url, anonKey);
 
   // Update the signer's own row only — verified wallet, lowercase PK.
   const { error } = await supabase

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
+  rateLimit,
   readBalanceRaw,
   serviceSupabase,
   shippingUsdg,
   shopPriceUsdg,
-  txTransfers,
+  txReceiptTransfers,
+  verifyActionProof,
   verifyWalletProof,
 } from "@/lib/shopServer";
 import { infinityDueRaw, tierFor, SHOP_WALLET } from "@/lib/shop";
@@ -22,12 +24,13 @@ function fail(status: number, error: string) {
 }
 
 // POST /api/shop/orders
-//   { action: "mine",   wallet, iso, signature }
-//   { action: "create", wallet, iso, signature, items: [{product_id, qty}] }
-//   { action: "pay",    wallet, iso, signature, order_id, tx_hash }
-// The recovered signer is the only wallet the order can belong to. Prices,
-// discounts, stock, and the amount due are all recomputed server-side —
-// nothing the client sends is trusted.
+//   { action: "mine",   wallet, iso, signature }                     — login proof
+//   { action: "create", wallet, iso, signature, items: [...] }       — login proof
+//   { action: "pay",    wallet, iso, signature, order_id, tx_hash }  — action proof
+// The recovered signer is the only wallet the order can belong to. "pay"
+// requires a signature over the action message (action + order_id bound) —
+// the 24h login proof alone can never mark an order paid. Prices, discounts,
+// stock, and the amount due are all recomputed server-side.
 export async function POST(req: Request) {
   const sb = serviceSupabase();
   if (!sb) return fail(503, "Shop storage is not configured.");
@@ -48,8 +51,17 @@ export async function POST(req: Request) {
   if (!action || !wallet || !iso || !signature) {
     return fail(400, "Missing action or wallet proof.");
   }
-  const signer = await verifyWalletProof(wallet, iso, signature);
-  if (!signer) return fail(401, "Invalid or stale wallet signature — sign in again.");
+
+  // "pay" is action-bound: the signed message must commit to this exact
+  // action + order id. Everything else uses the 24h login proof.
+  const payOrderId = Number(body.order_id);
+  const signer =
+    action === "pay"
+      ? await verifyActionProof(wallet, iso, signature, "pay", payOrderId)
+      : await verifyWalletProof(wallet, iso, signature);
+  if (!signer) {
+    return fail(401, "Invalid or stale wallet signature — sign in again.");
+  }
 
   if (action === "mine") {
     const { data, error } = await sb
@@ -64,6 +76,9 @@ export async function POST(req: Request) {
 
   if (action === "create") {
     if (!SHOP_WALLET) return fail(503, "Shop wallet is not configured.");
+    if (!rateLimit(`order:${signer}`, 10)) {
+      return fail(429, "Too many orders — try again later.");
+    }
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0 || items.length > 20) {
       return fail(400, "Cart is empty.");
@@ -182,14 +197,14 @@ export async function POST(req: Request) {
 
   if (action === "pay") {
     if (!SHOP_WALLET) return fail(503, "Shop wallet is not configured.");
-    const order_id = Number(body.order_id);
+    const order_id = payOrderId;
     const tx_hash = String(body.tx_hash ?? "").toLowerCase();
     if (!Number.isInteger(order_id)) return fail(400, "Missing order id.");
     if (!TX_RE.test(tx_hash)) return fail(400, "That does not look like a tx hash.");
 
     const { data: order } = await sb
       .from("shop_orders")
-      .select("*")
+      .select("*, shop_order_items(product_id, qty)")
       .eq("id", order_id)
       .maybeSingle();
     if (!order) return fail(404, "Order not found.");
@@ -208,9 +223,18 @@ export async function POST(req: Request) {
       return fail(400, "That tx is already attached to another order.");
     }
 
-    const tx = await txTransfers(tx_hash);
-    if (!tx.ok) return fail(400, "Transaction not found on Robinhood Chain yet — wait for confirmation and retry.");
-    if (tx.status !== "ok") return fail(400, "That transaction did not succeed.");
+    // Verify on-chain — the node receipt is the source of truth, not the
+    // explorer API. Requires a successful receipt on chain 4663.
+    let tx;
+    try {
+      tx = await txReceiptTransfers(tx_hash);
+    } catch {
+      return fail(502, "Could not reach the chain — try again.");
+    }
+    if (!tx.found) {
+      return fail(400, "Transaction not found on Robinhood Chain yet — wait for confirmation and retry.");
+    }
+    if (!tx.success) return fail(400, "That transaction did not succeed.");
 
     const due = BigInt(order.infinity_raw_due);
     const token = TOKEN.address.toLowerCase();
@@ -244,6 +268,33 @@ export async function POST(req: Request) {
           ? "That tx is already attached to another order."
           : `Could not mark order paid: ${error.message}`,
       );
+    }
+
+    // Decrement stock atomically per line — Postgres enforces stock >= qty.
+    // If any line can't be fulfilled the payment is real but unshippable:
+    // flag needs_refund instead of letting it queue for shipping.
+    const lines: { product_id: number | null; qty: number }[] =
+      (order.shop_order_items as { product_id: number | null; qty: number }[] | null) ??
+      (order.product_id != null && order.qty != null
+        ? [{ product_id: order.product_id, qty: order.qty }]
+        : []);
+    for (const it of lines) {
+      if (it.product_id == null) continue;
+      const { data: ok, error: sErr } = await sb.rpc("decrement_stock", {
+        pid: it.product_id,
+        q: it.qty,
+      });
+      if (sErr || ok !== true) {
+        await sb
+          .from("shop_orders")
+          .update({ status: "needs_refund" })
+          .eq("id", order_id)
+          .eq("status", "paid_need_address");
+        return fail(
+          409,
+          "Payment received but an item sold out — this order is flagged for refund.",
+        );
+      }
     }
     return NextResponse.json({ ok: true, status: "paid_need_address" });
   }

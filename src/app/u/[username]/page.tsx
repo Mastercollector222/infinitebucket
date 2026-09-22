@@ -9,6 +9,7 @@ import { supabase, type UserRow } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { PayoutCard } from "@/components/PayoutCard";
+import { safeHttpsUrl, SOCIAL_HOSTS } from "@/lib/profile";
 import { erc20Abi } from "@/lib/abi";
 import { CHAIN, TOKEN } from "@/lib/constants";
 import { compact, truncateAddress } from "@/lib/format";
@@ -146,12 +147,14 @@ export default function PublicProfilePage() {
           )}
 
           <div className="flex items-center gap-3">
-            {row.x_url && <SocialIcon href={row.x_url} label="X" icon="x" />}
+            {row.x_url && (
+              <SocialIcon raw={row.x_url} hosts={SOCIAL_HOSTS.x} label="X" icon="x" />
+            )}
             {row.telegram_url && (
-              <SocialIcon href={row.telegram_url} label="Telegram" icon="telegram" />
+              <SocialIcon raw={row.telegram_url} hosts={SOCIAL_HOSTS.telegram} label="Telegram" icon="telegram" />
             )}
             {row.website_url && (
-              <SocialIcon href={row.website_url} label="Website" icon="globe" />
+              <SocialIcon raw={row.website_url} label="Website" icon="globe" />
             )}
           </div>
 
@@ -172,14 +175,20 @@ export default function PublicProfilePage() {
 }
 
 function SocialIcon({
-  href,
+  raw,
+  hosts,
   label,
   icon,
 }: {
-  href: string;
+  raw: string;
+  hosts?: readonly string[];
   label: string;
   icon: "x" | "telegram" | "globe";
 }) {
+  // Render-time scheme check — javascript:/data:/http: never reach the DOM
+  // even if a bad value lands in the DB.
+  const href = safeHttpsUrl(raw, hosts);
+  if (!href) return null;
   return (
     <a
       href={href}

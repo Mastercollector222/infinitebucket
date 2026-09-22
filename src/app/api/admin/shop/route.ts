@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { decField, serviceSupabase, verifyAdmin } from "@/lib/shopServer";
+import {
+  decField,
+  serviceSupabase,
+  verifyActionProof,
+  verifyAdmin,
+} from "@/lib/shopServer";
+import { isAdmin } from "@/lib/shop";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +47,17 @@ export async function POST(req: Request) {
   if (!wallet || !iso || !signature || !action) {
     return fail(400, "Missing wallet proof or action.");
   }
-  const admin = await verifyAdmin(wallet, iso, signature);
+
+  // PII reads are action-bound: a per-order signature, not just the session.
+  let admin: string | null;
+  if (action === "get_shipment") {
+    const signer = await verifyActionProof(
+      wallet, iso, signature, "admin_get_shipment", Number(body.order_id),
+    );
+    admin = signer && isAdmin(signer) ? signer : null;
+  } else {
+    admin = await verifyAdmin(wallet, iso, signature);
+  }
   if (!admin) return fail(403, "Not an admin wallet (or stale signature).");
 
   switch (action) {

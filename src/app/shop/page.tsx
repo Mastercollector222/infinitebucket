@@ -30,7 +30,7 @@ function fmt(n: number, digits = 0): string {
 }
 
 export default function ShopPage() {
-  const { status, address, connect, verify } = useAuth();
+  const { status, address, connect, verify, signAction } = useAuth();
   const { balance, raw: rawBalance, isLoading: balLoading } = useInfinityBalance();
   const { cart, cartCount, addToCart, setQty, saveCart } = useShopCart(address);
 
@@ -152,6 +152,7 @@ export default function ShopPage() {
             tiers={tiers}
             setQty={setQty}
             verify={verify}
+            signAction={signAction}
             onClose={() => setCartOpen(false)}
             onPaid={() => {
               saveCart([]); // items are committed once payment verifies
@@ -167,8 +168,7 @@ export default function ShopPage() {
         {payOrder && address && (
           <PayModal
             order={payOrder}
-            wallet={address}
-            verify={verify}
+            signAction={signAction}
             onClose={() => setPayOrder(null)}
             onPaid={() => {
               const o = payOrder;
@@ -181,8 +181,7 @@ export default function ShopPage() {
         {addressOrder && address && (
           <AddressModal
             order={addressOrder}
-            wallet={address}
-            verify={verify}
+            signAction={signAction}
             onClose={() => setAddressOrder(null)}
             onDone={() => {
               setAddressOrder(null);
@@ -400,6 +399,7 @@ function OrdersList({
     awaiting_payment: "Awaiting payment",
     paid_need_address: "Paid — address needed",
     paid_pending_ship: "Paid — pending ship",
+    needs_refund: "Refund needed",
     shipped: "Shipped",
     cancelled: "Cancelled",
   };

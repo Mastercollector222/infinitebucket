@@ -56,8 +56,10 @@ cp .env.example .env.local
 ## Database (run once in the Supabase SQL editor)
 
 Wallet accounts live in a single `public.users` table. There is no Supabase
-Auth, no email, and no service_role — the anon key does reads/writes and the
-app enforces that a wallet only signs in as itself via a verified signature.
+Auth and no email. **The anon key is read-only on `users`** — all profile
+writes (login upsert, username, bio, socials, avatar_url) go through
+`POST /api/profile`, which verifies a `personal_sign` proof and writes with
+the service-role key. `shop_shipments` has no anon access at all.
 
 ```sql
 create table public.users (
@@ -73,14 +75,10 @@ alter table public.users enable row level security;
 create policy "users_select_public" on public.users
   for select using (true);
 
--- inserts/updates only via anon is too open; use a simple
--- approach: allow insert/update where wallet equals the
--- lowercase address the client sends, and enforce in app
--- that the address matches the connected signer.
-create policy "users_insert" on public.users
-  for insert with check (true);
-create policy "users_update" on public.users
-  for update using (true);
+-- NO insert/update policies or grants for anon — writes are server-side
+-- only via /api/profile + /api/avatar (signature-verified).
+-- (supabase/users_lockdown.sql revokes the old open policies on existing
+-- databases.)
 
 alter table public.users
   add constraint users_username_format
@@ -98,23 +96,35 @@ alter table public.users add column if not exists avatar_url text;
 
 - Connect an injected wallet (MetaMask / Rabby). If on the wrong network you
   get a one-click switch to chain 4663.
-- The wallet signs `Infinite Bucket login\nAddress: <addr>\nAt: <iso>` via
-  `personal_sign`; the signature is verified with `viem.verifyMessage` before
-  anything is written.
+- The wallet signs `Infinite Bucket login\nAddress: <addr>\nAt: <iso>\nChain: 4663`
+  via `personal_sign`; the signature is verified server-side before any write.
+  Future-dated timestamps (>5 min skew) are rejected.
 - A verified session persists in `localStorage` for 24h, then re-verifies.
+- **Action-bound proofs:** marking an order paid, reading/writing a shipping
+  address, and admin shipment views each require a fresh signature over
+  `Infinite Bucket <action>\nAddress: <addr>\nOrder: <id>\nAt: <iso>\nChain: 4663`
+  (10-minute validity) — the login session alone can't mark payments or read PII.
 - First-time wallets pick a username (`3–16` chars, `[a-zA-Z0-9_]`).
 - The token contract is read-only here — no transfers, no `approve()`.
+- Rate limits (per wallet/hour): 10 order creates, 10 avatar uploads,
+  20 shipment writes, 30 profile writes.
 
 ### Profiles + avatars
 
-- `/profile` edits username, bio, and social links on the caller's own row.
+- `/profile` edits username, bio, and social links on the caller's own row —
+  writes go through `POST /api/profile` with the login signature.
 - `/u/<username>` is the public read-only profile.
+- Social URLs are validated server-side **and** at render: `https:` only,
+  hosts allowlisted — X → `x.com`/`twitter.com`, Telegram → `t.me`,
+  Website → any `https:` host. `javascript:`/`data:`/`http:` never reach the DOM.
+- `avatar_url` must start `https://res.cloudinary.com/` — anything else
+  falls back to the generated blockie.
 - Avatars upload through `POST /api/avatar`: the wallet signs a fresh
   `Infinite Bucket avatar upload` proof, the route verifies it with
   `viem.verifyMessage`, then does a **signed** Cloudinary upload
   (`avatars/<lowercase-wallet>`) and updates `users.avatar_url` for the
-  signer's row only. jpg/png/webp, max 1 MB, no svg. The API secret lives
-  only in server env vars.
+  signer's row only via the service role. jpg/png/webp, max 1 MB, no svg.
+  The API secret lives only in server env vars.
 
 ### Reward the Holders (`/reward-the-holders`)
 
@@ -178,10 +188,17 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
 - Checkout: order created `awaiting_payment` → buyer sends exactly
   `infinity_raw_due` $INFINITY (discounted merch + flat shipping in one
   transfer) to `NEXT_PUBLIC_SHOP_WALLET` → pastes the tx hash → the API
-  verifies on Blockscout (to=shop wallet, from=buyer, INFINITY, amount ≥
-  due, tx not already used) → `paid_need_address` → shipping form →
-  `paid_pending_ship` → admin marks `shipped`. No approvals, no custody
-  contract — the site never pulls tokens.
+  verifies **on-chain** via `eth_getTransactionReceipt` on the 4663 RPC
+  (status `0x1`, decoded `Transfer` log: token=INFINITY, from=buyer,
+  to=shop wallet, value ≥ due, tx hash single-use) → `paid_need_address`
+  → shipping form → `paid_pending_ship` → admin marks `shipped`.
+  Marking paid requires a fresh action-bound signature (action + order id),
+  not just the login session. No approvals, no custody contract — the site
+  never pulls tokens.
+- Stock: decremented atomically at payment verification
+  (`decrement_stock(pid, qty)` — `stock >= qty` enforced by Postgres). If a
+  line can't be fulfilled the order is flagged `needs_refund` instead of
+  shipping.
 - Shipping: flat `$SHIPPING_USD` (default 6 USDG-equivalent) in $INFINITY
   at the same pool rate. "Flat shipping: $6 in $INFINITY."
 - PII: ship-to data lives in `shop_shipments` — no public RLS policies at
@@ -200,8 +217,9 @@ Supabase SQL editor (creates `shop_settings`, `shop_tiers`, `shop_products`,
 - Migrations: `supabase/shop.sql`, then `supabase/shop_cart.sql` (cart +
   shipments + new order statuses), then `supabase/shop_per_item.sql`
   (per-item gates + descriptions), then `supabase/shop_product_snapshot.sql`
-  (title snapshot on order lines + `ON DELETE SET NULL` product FKs — lets
-  products be deleted without losing order history). All safe to re-run.
+  (title snapshot + `ON DELETE SET NULL` product FKs), then
+  `supabase/users_lockdown.sql` (revokes anon writes on `users`, adds
+  `decrement_stock` + `needs_refund`). All safe to re-run.
 - Access model: `shop_tiers`/`shop_products`/`shop_settings` are public-read
   via RLS. `shop_orders` has no anon access — all writes and order reads go
   through `/api/shop/orders` and `/api/admin/shop`, which verify the wallet

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import {
   decField,
   encField,
+  rateLimit,
   serviceSupabase,
-  verifyWalletProof,
+  verifyActionProof,
 } from "@/lib/shopServer";
 import { SHIP_FIELDS, validateShipment, type ShipmentInput } from "@/lib/shop";
 
@@ -21,7 +22,9 @@ function clean(v: unknown): string {
 // POST /api/shop/shipment
 //   { action: "get", wallet, iso, signature, order_id }
 //   { action: "set", wallet, iso, signature, order_id, recipient_name, ... }
-// The recovered signer must own the order. PII is encrypted at rest when
+// PII is action-bound: the signature must commit to this action + order id —
+// a 24h login session alone never unlocks an address. The recovered signer
+// must own the order. Fields are encrypted at rest when
 // SHIPPING_ENCRYPTION_KEY is set; the row is never readable via anon/RLS.
 export async function POST(req: Request) {
   const sb = serviceSupabase();
@@ -41,10 +44,15 @@ export async function POST(req: Request) {
     signature?: string;
   };
   const order_id = Number(body.order_id);
-  if (!action || !wallet || !iso || !signature || !Number.isInteger(order_id)) {
+  if (
+    (action !== "get" && action !== "set") ||
+    !wallet || !iso || !signature || !Number.isInteger(order_id)
+  ) {
     return fail(400, "Missing action, wallet proof, or order id.");
   }
-  const signer = await verifyWalletProof(wallet, iso, signature);
+  const signer = await verifyActionProof(
+    wallet, iso, signature, `shipment_${action}`, order_id,
+  );
   if (!signer) return fail(401, "Invalid or stale wallet signature — sign in again.");
 
   const { data: order } = await sb
@@ -70,6 +78,9 @@ export async function POST(req: Request) {
   }
 
   if (action === "set") {
+    if (!rateLimit(`ship:${signer}`, 20)) {
+      return fail(429, "Too many address updates — try again later.");
+    }
     if (order.status === "shipped" || order.status === "cancelled") {
       return fail(400, "Shipping address is locked for this order.");
     }
@@ -115,6 +126,4 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true, status: "paid_pending_ship" });
   }
-
-  return fail(400, `Unknown action "${action}".`);
 }

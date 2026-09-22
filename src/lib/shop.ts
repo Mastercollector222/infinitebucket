@@ -48,6 +48,7 @@ export type ShopOrderStatus =
   | "awaiting_payment"
   | "paid_need_address"
   | "paid_pending_ship"
+  | "needs_refund" // payment verified but stock ran out — refund owed
   | "shipped"
   | "cancelled";
 

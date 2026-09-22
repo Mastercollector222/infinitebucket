@@ -67,7 +67,7 @@ export default function ProfilePage() {
       const prior = loadSession();
       let iso: string;
       let signature: string;
-      if (prior?.proof && prior.wallet === address.toLowerCase()) {
+      if (prior?.proof?.v === 2 && prior.wallet === address.toLowerCase()) {
         iso = prior.proof.iso;
         signature = prior.proof.signature;
       } else {

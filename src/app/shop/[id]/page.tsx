@@ -32,7 +32,7 @@ export default function ProductPage() {
   const params = useParams();
   const id = Number(params.id);
 
-  const { status, address, connect, verify } = useAuth();
+  const { status, address, connect, verify, signAction } = useAuth();
   const { balance, raw: rawBalance, isLoading: balLoading } = useInfinityBalance();
   const { cart, cartCount, addToCart, setQty, saveCart } = useShopCart(address);
 
@@ -242,6 +242,7 @@ export default function ProductPage() {
             tiers={tiers}
             setQty={setQty}
             verify={verify}
+            signAction={signAction}
             onClose={() => setCartOpen(false)}
             onPaid={() => saveCart([])}
             onDone={() => {
@@ -253,8 +254,7 @@ export default function ProductPage() {
         {payOrder && address && (
           <PayModal
             order={payOrder}
-            wallet={address}
-            verify={verify}
+            signAction={signAction}
             onClose={() => setPayOrder(null)}
             onPaid={() => {
               const o = payOrder;
@@ -266,8 +266,7 @@ export default function ProductPage() {
         {addressOrder && address && (
           <AddressModal
             order={addressOrder}
-            wallet={address}
-            verify={verify}
+            signAction={signAction}
             onClose={() => setAddressOrder(null)}
             onDone={() => setAddressOrder(null)}
           />

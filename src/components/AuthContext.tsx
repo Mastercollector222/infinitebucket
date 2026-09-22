@@ -14,6 +14,7 @@ import { verifyMessage } from "viem";
 import { supabase, type UserRow } from "@/lib/supabase";
 import type { ProfileInput } from "@/lib/profile";
 import {
+  actionMessage,
   clearSession,
   loadSession,
   loginMessage,
@@ -38,6 +39,12 @@ type AuthValue = {
   error: string | null;
   connect: () => void;
   verify: (addr?: `0x${string}`) => Promise<void>;
+  // Fresh action-bound signature (action + order id) for payment marks and
+  // PII reads — never satisfied by the 24h login proof alone.
+  signAction: (
+    action: string,
+    orderId: number,
+  ) => Promise<{ wallet: string; iso: string; signature: string } | null>;
   submitUsername: (u: string) => Promise<boolean>;
   saveProfile: (p: ProfileInput) => Promise<string | null>;
   setAvatar: (url: string | null) => void;
@@ -60,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const busy = useRef(false);
   // The verified login signature — reused as an upload proof so avatar
   // changes don't need a second wallet popup.
-  const proofRef = useRef<{ iso: string; signature: string } | null>(null);
+  const proofRef = useRef<{ iso: string; signature: string; v?: number } | null>(null);
 
   // Persist the session, keeping the existing proof if this one has none.
   const persist = useCallback((wallet: string, name: string | null) => {
@@ -87,9 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // After a verified signature (or a fresh stored session), sync the row.
-  // SELECT first — an existing row is only touched on `last_seen`; username is
-  // never overwritten by login. (supabase-js upsert defaults missing columns
-  // to NULL on merge, which would wipe the username every sign-in.)
+  // Writes go through /api/profile (service role + signature check) — anon
+  // keys can no longer write public.users. Username is never overwritten
+  // by login.
   const applyVerified = useCallback(
     async (addr: `0x${string}`, signatureVerified: boolean) => {
       const wallet = addr.toLowerCase();
@@ -100,21 +107,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus("needs_username");
         return;
       }
-      let row = await fetchUser(wallet);
-      if (signatureVerified) {
-        const last_seen = new Date().toISOString();
-        if (row) {
-          await supabase.from("users").update({ last_seen }).eq("wallet", wallet);
-        } else {
-          const { error: insErr } = await supabase
-            .from("users")
-            .insert({ wallet, last_seen });
-          if (insErr && insErr.code !== "23505") throw insErr;
-          // Re-select: gets the fresh row, and covers a rare insert race
-          // where another tab created the row between our SELECT and INSERT.
-          row = await fetchUser(wallet);
+      let row: UserRow | null = null;
+      if (signatureVerified && proofRef.current) {
+        // The signature we just collected IS the login proof for touch.
+        try {
+          const res = await fetch("/api/profile", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              action: "touch",
+              wallet,
+              iso: proofRef.current.iso,
+              signature: proofRef.current.signature,
+            }),
+          });
+          const j = await res.json();
+          if (j.ok) row = j.row as UserRow;
+        } catch {
+          /* fall back to read-only */
         }
       }
+      if (!row) row = await fetchUser(wallet);
       const name = row?.username ?? null;
       setRow(row);
       setUsername(name);
@@ -137,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const signature = await signMessageAsync({ message });
         const ok = await verifyMessage({ address: a, message, signature });
         if (!ok) throw new Error("Signature did not match this address.");
-        proofRef.current = { iso, signature };
+        proofRef.current = { iso, signature, v: 2 };
         await applyVerified(a, true);
       } catch (e) {
         const msg = (e as { shortMessage?: string; message?: string }).shortMessage
@@ -207,6 +220,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, [connectAsync, connectors, verify]);
 
+  // Fresh action-bound signature — required by pay + shipment endpoints.
+  const signAction = useCallback(
+    async (action: string, orderId: number) => {
+      if (!address) return null;
+      try {
+        const iso = new Date().toISOString();
+        const signature = await signMessageAsync({
+          message: actionMessage(action, address, orderId, iso),
+        });
+        return { wallet: address.toLowerCase(), iso, signature };
+      } catch {
+        return null;
+      }
+    },
+    [address, signMessageAsync],
+  );
+
+  // Shared write path for profile fields: stored login proof → /api/profile.
+  const profileSave = useCallback(
+    async (fields: Record<string, unknown>): Promise<string | null> => {
+      const stored = loadSession()?.proof;
+      const p = proofRef.current ?? (stored?.v === 2 ? stored : null);
+      if (!p || !address) return "No verified session — sign in again.";
+      try {
+        const res = await fetch("/api/profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "save",
+            wallet: address.toLowerCase(),
+            iso: p.iso,
+            signature: p.signature,
+            fields,
+          }),
+        });
+        const j = await res.json();
+        if (!j.ok) return j.error ?? "Could not save.";
+        if (j.row) setRow(j.row as UserRow);
+        return null;
+      } catch {
+        return "Could not reach the server.";
+      }
+    },
+    [address],
+  );
+
   const submitUsername = useCallback(
     async (u: string): Promise<boolean> => {
       const trimmed = u.trim();
@@ -221,70 +280,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setError(null);
       const wallet = address.toLowerCase();
-      // Claim the name on the existing row — the login flow created/found it.
-      const { data: updated, error: err } = await supabase
-        .from("users")
-        .update({ username: trimmed })
-        .eq("wallet", wallet)
-        .select("wallet")
-        .maybeSingle();
+      const err = await profileSave({ username: trimmed });
       if (err) {
-        setError(
-          err.code === "23505"
-            ? "That username is taken."
-            : `Could not save username: ${err.message}`,
-        );
+        setError(err);
         return false;
       }
-      if (!updated) {
-        // Row vanished between login and submit — recreate it with the name.
-        const { error: insErr } = await supabase
-          .from("users")
-          .insert({ wallet, username: trimmed });
-        if (insErr) {
-          setError(
-            insErr.code === "23505"
-              ? "That username is taken."
-              : `Could not save username: ${insErr.message}`,
-          );
-          return false;
-        }
-      }
       setUsername(trimmed);
-      setRow((r) => (r ? { ...r, username: trimmed } : r));
       persist(wallet, trimmed);
       setStatus("ready");
       return true;
     },
-    [address, persist],
+    [address, persist, profileSave, supabase],
   );
 
-  // Profile page save: UPDATE the caller's own row only — never insert.
+  // Profile page save — validated server-side on the signer's own row.
   const saveProfile = useCallback(
     async (p: ProfileInput): Promise<string | null> => {
-      if (!address || !supabase) return "Not connected.";
-      const wallet = address.toLowerCase();
-      const { error: err } = await supabase
-        .from("users")
-        .update({
-          username: p.username,
-          bio: p.bio,
-          x_url: p.x_url,
-          telegram_url: p.telegram_url,
-          website_url: p.website_url,
-        })
-        .eq("wallet", wallet);
-      if (err) {
-        return err.code === "23505"
-          ? "That username is taken."
-          : `Could not save profile: ${err.message}`;
-      }
+      if (!address) return "Not connected.";
+      const err = await profileSave({
+        username: p.username,
+        bio: p.bio,
+        x_url: p.x_url,
+        telegram_url: p.telegram_url,
+        website_url: p.website_url,
+      });
+      if (err) return err;
       setUsername(p.username);
-      setRow((r) => (r ? { ...r, ...p } : r));
-      persist(wallet, p.username);
+      persist(address.toLowerCase(), p.username);
       return null;
     },
-    [address, persist],
+    [address, persist, profileSave],
   );
 
   // Avatar updates happen server-side (/api/avatar); this just syncs the row.
@@ -314,6 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         connect,
         verify,
+        signAction,
         submitUsername,
         saveProfile,
         setAvatar,

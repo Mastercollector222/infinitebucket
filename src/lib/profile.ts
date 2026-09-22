@@ -54,3 +54,31 @@ export function checkWebsiteUrl(url: string): string | null {
   }
   return null;
 }
+
+// ── Server + render enforcement ──────────────────────────────────────────
+// The checks above are UX hints; these are the security boundary. Social
+// hosts are allowlisted; website_url allows any https host. Everything is
+// scheme-checked so javascript:/data:/http: can never reach the DOM.
+export const SOCIAL_HOSTS = {
+  x: ["x.com", "twitter.com", "www.x.com", "www.twitter.com"],
+  telegram: ["t.me", "www.t.me"],
+} as const;
+
+// Returns a normalized https URL, or null when the input isn't https
+// (or the host isn't allowed when hosts are given).
+export function safeHttpsUrl(url: string, hosts?: readonly string[]): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== "https:") return null;
+    if (hosts && !hosts.includes(u.hostname.toLowerCase())) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+export const CLOUDINARY_PREFIX = "https://res.cloudinary.com/";
+
+export function safeAvatarUrl(url: string | null | undefined): string | null {
+  return url && url.startsWith(CLOUDINARY_PREFIX) ? url : null;
+}

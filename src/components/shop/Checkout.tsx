@@ -28,7 +28,7 @@ export type Proof = { wallet: string; iso: string; signature: string };
 // verify() once, then re-reads.
 export function sessionProof(): Proof | null {
   const s = loadSession();
-  if (!s?.proof) return null;
+  if (!s?.proof || s.proof.v !== 2) return null; // pre-chain-bound → re-sign
   return { wallet: s.wallet, iso: s.proof.iso, signature: s.proof.signature };
 }
 
@@ -66,6 +66,7 @@ export function CheckoutModal({
   tiers,
   setQty,
   verify,
+  signAction,
   onClose,
   onPaid,
   onDone,
@@ -76,6 +77,8 @@ export function CheckoutModal({
   tiers: ShopTier[];
   setQty: (id: number, qty: number) => void;
   verify: () => Promise<void>;
+  // Action-bound signature (action + order id) — required for pay/ship.
+  signAction: (action: string, orderId: number) => Promise<Proof | null>;
   onClose: () => void;
   onPaid: () => void;
   onDone: () => void;
@@ -138,8 +141,9 @@ export function CheckoutModal({
     setBusy(true);
     setError(null);
     try {
-      const p = await proof();
-      if (!p) throw new Error("Sign in first — no verified session.");
+      // Payment marks need an action-bound signature, not the login session.
+      const p = await signAction("pay", order.id);
+      if (!p) throw new Error("Signature rejected — sign to verify payment.");
       const res = await fetch("/api/shop/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -260,7 +264,7 @@ export function CheckoutModal({
       {step === "ship" && order && (
         <ShipmentForm
           orderId={order.id}
-          proof={proof}
+          proof={() => signAction("shipment_set", order.id)}
           busy={busy}
           setBusy={setBusy}
           error={error}
@@ -346,14 +350,12 @@ export function PayStep({
 // Resume payment for an awaiting_payment order from "My orders".
 export function PayModal({
   order,
-  wallet,
-  verify,
+  signAction,
   onClose,
   onPaid,
 }: {
   order: ShopOrder;
-  wallet: string;
-  verify: () => Promise<void>;
+  signAction: (action: string, orderId: number) => Promise<Proof | null>;
   onClose: () => void;
   onPaid: () => void;
 }) {
@@ -361,22 +363,13 @@ export function PayModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const proof = async (): Promise<Proof | null> => {
-    let p = sessionProof();
-    if (!p || p.wallet !== wallet.toLowerCase()) {
-      await verify();
-      p = sessionProof();
-    }
-    return p;
-  };
-
   const submitTx = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const p = await proof();
-      if (!p) throw new Error("Sign in first — no verified session.");
+      const p = await signAction("pay", order.id);
+      if (!p) throw new Error("Signature rejected — sign to verify payment.");
       const res = await fetch("/api/shop/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -521,32 +514,22 @@ export function ShipmentForm({
 
 export function AddressModal({
   order,
-  wallet,
-  verify,
+  signAction,
   onClose,
   onDone,
 }: {
   order: ShopOrder;
-  wallet: string;
-  verify: () => Promise<void>;
+  signAction: (action: string, orderId: number) => Promise<Proof | null>;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const proof = async (): Promise<Proof | null> => {
-    let p = sessionProof();
-    if (!p || p.wallet !== wallet.toLowerCase()) {
-      await verify();
-      p = sessionProof();
-    }
-    return p;
-  };
   return (
     <Modal onClose={onClose} title={`Shipping for order #${order.id}`}>
       <ShipmentForm
         orderId={order.id}
-        proof={proof}
+        proof={() => signAction("shipment_set", order.id)}
         busy={busy}
         setBusy={setBusy}
         error={error}

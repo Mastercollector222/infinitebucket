@@ -11,19 +11,33 @@ export type Session = {
   verifiedAt: number; // ms epoch of last verified signature
   // The login signature, kept so actions like avatar upload can prove wallet
   // ownership to the API without a second popup. Public proof, not a secret.
-  proof?: { iso: string; signature: string };
+  // v tracks the signed-message format — proofs without it used the pre-
+  // chain-bound message and must be re-signed.
+  proof?: { iso: string; signature: string; v?: number };
 };
 
 // The message the wallet signs. Timestamped so signatures can't be replayed
-// as fresh forever.
+// as fresh forever, and chain-bound so a signature can't be replayed on a
+// different network context.
 export function loginMessage(address: string, iso: string): string {
-  return `Infinite Bucket login\nAddress: ${address}\nAt: ${iso}`;
+  return `Infinite Bucket login\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
+}
+
+// Action-bound proof for sensitive writes — payment marks and PII reads
+// must be signed per-call, never satisfied by the 24h login session alone.
+export function actionMessage(
+  action: string,
+  address: string,
+  orderId: number,
+  iso: string,
+): string {
+  return `Infinite Bucket ${action}\nAddress: ${address}\nOrder: ${orderId}\nAt: ${iso}\nChain: 4663`;
 }
 
 // Separate proof for avatar uploads — the API route verifies this before
 // touching Cloudinary or the users row, so only the wallet owner can write.
 export function avatarMessage(address: string, iso: string): string {
-  return `Infinite Bucket avatar upload\nAddress: ${address}\nAt: ${iso}`;
+  return `Infinite Bucket avatar upload\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
 }
 
 export function loadSession(): Session | null {

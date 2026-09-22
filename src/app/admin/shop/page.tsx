@@ -17,7 +17,10 @@ type Proof = { wallet: string; iso: string; signature: string };
 
 function proof(): Proof | null {
   const s = loadSession();
-  return s?.proof ? { wallet: s.wallet, iso: s.proof.iso, signature: s.proof.signature } : null;
+  // v2 = chain-bound message format; older proofs must be re-signed.
+  return s?.proof?.v === 2
+    ? { wallet: s.wallet, iso: s.proof.iso, signature: s.proof.signature }
+    : null;
 }
 
 async function adminCall(action: string, payload: Record<string, unknown> = {}) {
@@ -34,7 +37,7 @@ async function adminCall(action: string, payload: Record<string, unknown> = {}) 
 }
 
 export default function AdminShopPage() {
-  const { status, address, connect, verify } = useAuth();
+  const { status, address, connect, verify, signAction } = useAuth();
   const admins = adminWallets();
   const wallet = address?.toLowerCase();
   const authorized = wallet != null && admins.includes(wallet);
@@ -74,13 +77,22 @@ export default function AdminShopPage() {
           </p>
         </div>
       ) : (
-        <AdminPanel verify={verify} />
+        <AdminPanel verify={verify} signAction={signAction} />
       )}
     </main>
   );
 }
 
-function AdminPanel({ verify }: { verify: () => Promise<void> }) {
+function AdminPanel({
+  verify,
+  signAction,
+}: {
+  verify: () => Promise<void>;
+  signAction: (
+    action: string,
+    orderId: number,
+  ) => Promise<Proof | null>;
+}) {
   const [tab, setTab] = useState<"orders" | "products" | "tiers" | "settings">("orders");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,7 +152,9 @@ function AdminPanel({ verify }: { verify: () => Promise<void> }) {
         </p>
       )}
 
-      {tab === "orders" && <OrdersTab run={run} onDone={() => setNotice("Saved.")} />}
+      {tab === "orders" && (
+        <OrdersTab run={run} signAction={signAction} onDone={() => setNotice("Saved.")} />
+      )}
       {tab === "products" && <ProductsTab run={run} onDone={() => setNotice("Saved.")} />}
       {tab === "tiers" && <TiersTab run={run} onDone={() => setNotice("Saved.")} />}
       {tab === "settings" && <SettingsTab run={run} onDone={() => setNotice("Saved.")} />}
@@ -165,7 +179,15 @@ function itemsSummary(o: ShopOrder): string {
     .join(", ");
 }
 
-function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
+function OrdersTab({
+  run,
+  signAction,
+  onDone,
+}: {
+  run: Run;
+  signAction: (action: string, orderId: number) => Promise<Proof | null>;
+  onDone: () => void;
+}) {
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [filter, setFilter] = useState("");
   const [tracking, setTracking] = useState<Record<number, string>>({});
@@ -183,7 +205,7 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
   return (
     <div className="glass p-5">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {["", "awaiting_payment", "paid_need_address", "paid_pending_ship", "shipped", "cancelled"].map((s) => (
+        {["", "awaiting_payment", "paid_need_address", "paid_pending_ship", "needs_refund", "shipped", "cancelled"].map((s) => (
           <button
             key={s || "all"}
             type="button"
@@ -248,8 +270,20 @@ function OrdersTab({ run, onDone }: { run: Run; onDone: () => void }) {
                     <button
                       type="button"
                       onClick={async () => {
-                        const j = await run("get_shipment", { order_id: o.id });
-                        if (j) {
+                        // PII reads need a per-order action signature.
+                        const p = await signAction("admin_get_shipment", o.id);
+                        if (!p) return;
+                        const res = await fetch("/api/admin/shop", {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({
+                            ...p,
+                            action: "get_shipment",
+                            order_id: o.id,
+                          }),
+                        });
+                        const j = await res.json();
+                        if (j?.ok) {
                           setShipments((s) => ({
                             ...s,
                             [o.id]: (j.shipment as Record<string, string> | null) ?? null,

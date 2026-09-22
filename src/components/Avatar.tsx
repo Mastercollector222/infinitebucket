@@ -1,6 +1,8 @@
+import { safeAvatarUrl } from "@/lib/profile";
+
 // Wallet avatar: Cloudinary image when set, else a deterministic blockie-like
 // fallback — hue derived from the wallet, first letter of the username (or
-// address) inside.
+// address) inside. Non-Cloudinary URLs never render — no tracking pixels.
 export function Avatar({
   url,
   wallet,
@@ -12,6 +14,7 @@ export function Avatar({
   username?: string | null;
   size: number;
 }) {
+  const src = safeAvatarUrl(url);
   const seed = (wallet ?? username ?? "?").toLowerCase();
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
@@ -20,10 +23,10 @@ export function Avatar({
   const hue = hash % 360;
   const letter = (username?.[0] ?? wallet?.slice(2, 3) ?? "?").toUpperCase();
 
-  return url ? (
+  return src ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={url}
+      src={src}
       alt={username ?? "avatar"}
       width={size}
       height={size}
