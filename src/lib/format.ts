@@ -36,6 +36,19 @@ export function formatUsdPrice(value?: number | null): string {
   }).format(value);
 }
 
+// Compact USD price for the $BUCKET header chip: >= 0.01 → 4 decimals,
+// < 0.01 → up to 6 decimals. Never scientific notation.
+export function formatUsdChip(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const tiny = Math.abs(value) < 0.01;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: tiny ? 2 : 4,
+    maximumFractionDigits: tiny ? 6 : 4,
+  }).format(value);
+}
+
 export function compact(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("en-US", {

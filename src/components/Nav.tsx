@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { LINKS } from "@/lib/constants";
-import { formatUsdPrice, truncateAddress } from "@/lib/format";
+import { formatUsdChip, formatUsdPrice, truncateAddress } from "@/lib/format";
 import { useMarketContext } from "./MarketContext";
+import { useBucketPrice } from "@/hooks/useBucket";
 import { WalletButton } from "./WalletButton";
 
 const MENU_LINKS = [
@@ -18,6 +19,7 @@ const MENU_LINKS = [
 
 export function Nav() {
   const { data } = useMarketContext();
+  const bucket = useBucketPrice();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -77,6 +79,8 @@ export function Nav() {
               </span>
             )}
           </div>
+
+          {bucket && <BucketChip bucket={bucket} />}
 
           {MENU_LINKS.map((l) => (
             <Link
@@ -161,11 +165,14 @@ export function Nav() {
                       LIVE
                     </span>
                   </span>
-                  {data && (
-                    <span className="font-mono text-sm text-[var(--color-chrome)]">
-                      {formatUsdPrice(data.priceUsd)}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-2">
+                    {data && (
+                      <span className="font-mono text-sm text-[var(--color-chrome)]">
+                        {formatUsdPrice(data.priceUsd)}
+                      </span>
+                    )}
+                    {bucket && <BucketChip bucket={bucket} mobile />}
+                  </span>
                 </div>
               </div>
             </motion.nav>
@@ -173,5 +180,43 @@ export function Nav() {
         </AnimatePresence>
       </div>
     </header>
+  );
+}
+
+// Secondary chip — deliberately quieter than the LIVE $INFINITY pill:
+// neutral border, muted label, no live dot. Hidden entirely when the
+// feed is down (never a stale hardcoded price).
+function BucketChip({
+  bucket,
+  mobile = false,
+}: {
+  bucket: { priceUsd: number; change24h: number | null };
+  mobile?: boolean;
+}) {
+  const up = (bucket.change24h ?? 0) >= 0;
+  return (
+    <span
+      title="Bucket Shop Token — what the 75% fee buys. Not financial advice."
+      className={`items-center gap-1.5 rounded-full border border-[var(--color-stroke)] bg-[rgba(28,20,44,0.5)] px-2.5 py-1.5 ${
+        mobile ? "inline-flex" : "hidden sm:inline-flex"
+      }`}
+    >
+      <span className="font-mono text-[0.6rem] font-semibold tracking-[0.1em] text-[var(--color-muted)]">
+        $BUCKET
+      </span>
+      <span className="font-mono text-xs text-[var(--color-chrome)]">
+        {formatUsdChip(bucket.priceUsd)}
+      </span>
+      {bucket.change24h != null && (
+        <span
+          className={`font-mono text-[0.6rem] ${
+            up ? "text-[var(--color-live)]" : "text-[var(--color-sell)]"
+          }`}
+        >
+          {up ? "+" : ""}
+          {bucket.change24h.toFixed(1)}%
+        </span>
+      )}
+    </span>
   );
 }

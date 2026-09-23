@@ -31,6 +31,13 @@ export const BUCKET = {
 export const ENGINE_DISTRIBUTOR =
   "0x2ccc152ad68419f777531e6a40a52325e2a80ee2" as const;
 
+// Deepest USDG-quoted BUCKET pool on Robinhood Chain (Uniswap v4, ~$635k
+// liquidity) — used by /api/bucket for the header price chip.
+export const BUCKET_POOL = {
+  id: "0xf995afbcf406c641a5185ba2330cfef8ec0fd7502f06d638798c48e78e6e9dac" as const,
+  network: "robinhood",
+} as const;
+
 const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 4663;
 
 export const CHAIN = {

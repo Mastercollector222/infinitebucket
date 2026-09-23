@@ -29,6 +29,13 @@ export type MarketResponse = {
   error?: string;
 };
 
+export type BucketQuote = {
+  ok: boolean;
+  priceUsd: number | null;
+  change24h: number | null; // percent
+  error?: string;
+};
+
 export type EngineStats = {
   // INFINITY bought back and burned by the engine (token units, ongoing).
   burnedInfinity: number | null;
