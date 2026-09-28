@@ -79,7 +79,7 @@ const csp = [
   `img-src 'self' https://res.cloudinary.com data:${wcImgSrc.length ? ` ${wcImgSrc.join(" ")}` : ""}`,
   `connect-src ${connectSrc}`,
   "font-src 'self' data:",
-  wcFrameSrc.length ? `frame-src ${wcFrameSrc.join(" ")}` : "frame-src 'self'",
+  `frame-src 'self'${wcFrameSrc.length ? ` ${wcFrameSrc.join(" ")}` : ""}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
