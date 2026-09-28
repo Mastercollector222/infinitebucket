@@ -55,6 +55,18 @@ export default function PublicProfilePage() {
   const balance =
     balanceRaw != null ? Number(formatUnits(balanceRaw as bigint, TOKEN.decimals)) : null;
 
+  // Career Drop wins — public game stat, served by the score route (the
+  // drop_scores table itself has no anon access).
+  const { data: dropWins } = useQuery({
+    queryKey: ["drops", wallet ?? ""],
+    enabled: Boolean(wallet),
+    queryFn: async (): Promise<number> => {
+      const res = await fetch(`/api/play/score?wallet=${wallet}`);
+      const d = await res.json().catch(() => null);
+      return d?.ok ? (d.wins as number) : 0;
+    },
+  });
+
   const isOwner =
     Boolean(address) && Boolean(wallet) && address!.toLowerCase() === wallet;
 
@@ -92,13 +104,16 @@ export default function PublicProfilePage() {
             This wallet hasn&apos;t picked a username yet.
           </p>
           {wallet && <PayoutCard wallet={wallet} />}
-          <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
-            <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-              {TOKEN.symbol} balance
-            </span>
-            <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
-              {balance != null ? compact(balance) : "—"}
-            </span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
+              <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
+                {TOKEN.symbol} balance
+              </span>
+              <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
+                {balance != null ? compact(balance) : "—"}
+              </span>
+            </div>
+            <Drops wins={dropWins} />
           </div>
         </div>
       ) : !row ? (
@@ -160,17 +175,34 @@ export default function PublicProfilePage() {
 
           {wallet && <PayoutCard wallet={wallet} />}
 
-          <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
-            <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-              {TOKEN.symbol} balance
-            </span>
-            <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
-              {balance != null ? compact(balance) : "—"}
-            </span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3">
+              <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
+                {TOKEN.symbol} balance
+              </span>
+              <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
+                {balance != null ? compact(balance) : "—"}
+              </span>
+            </div>
+            <Drops wins={dropWins} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function Drops({ wins }: { wins: number | undefined }) {
+  return (
+    <Link
+      href="/play"
+      className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3 transition hover:border-[rgba(196,160,255,0.4)]"
+    >
+      <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Drops</span>
+      <span className="ml-3 font-mono text-sm font-semibold text-[var(--color-white-soft)]">
+        {wins != null ? compact(wins) : "—"}
+      </span>
+    </Link>
   );
 }
 

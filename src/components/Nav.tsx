@@ -12,6 +12,7 @@ import { WalletButton } from "./WalletButton";
 
 const MENU_LINKS = [
   { href: "/shop", label: "Shop" },
+  { href: "/play", label: "Play" },
   { href: "/reward-the-holders", label: "Reward the Holders" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/lounge", label: "Lounge" },

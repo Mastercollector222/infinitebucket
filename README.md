@@ -145,6 +145,42 @@ tables to `service_role` only.
   (`mute`/`unmute`, default 24h) after an admin signature.
 - No transfers, tips, or token spend to chat. No PII.
 
+### Drop (`/play`)
+
+The Studio game at `public/game/drop.html` embedded in site chrome — rules,
+AI, and art unchanged. Two additive `postMessage` hooks are the only edits:
+`initGame()` fires `drop_start` (every match, including page load and New
+Game / Play again), and `endGame()` fires `drop_win` / `drop_lose`. The
+parent only accepts messages where `event.source` is the iframe's own window
+— the game is never handed anything that can set a score.
+
+Setup: run `supabase/play.sql` once — `drop_scores` (wins / games_played /
+plays_today / plays_day) with RLS on and **zero** public policies; the
+`drop_start` / `drop_win` RPCs are `service_role`-only.
+
+- Demo mode: disconnected or `balanceOf == 0` → play vs House freely, no
+  career score ("Connect and hold $INFINITY to keep score."). The client
+  never calls the play APIs in demo mode, and the server answers
+  `{allowed: true, demo: true}` without touching the table.
+- Daily cap by live server-side `balanceOf` (never a posted value):
+  <1M → 3, 1M–10M → 8, ≥10M → 15 matches per UTC day.
+- `POST /api/play/start` — `playMessage("play_start")` personal_sign
+  (action + wallet + timestamp + `Chain: 4663`, ≤10 min, never
+  future-dated). `drop_start` resets `plays_today` when the UTC day rolls,
+  rejects at cap, else counts the match atomically and returns
+  `{allowed, remaining, cap, wins}`.
+- `POST /api/play/result` — same signature shape over `"play_result"`,
+  `{outcome: "win" | "lose"}`. `drop_win` only increments when
+  `games_played > wins`, so a replayed/unsigned result can never push the
+  career score past recorded matches. Losses record nothing (the match was
+  already counted at start).
+- Cap hit → the parent overlays the table (iframe buttons unreachable) and
+  shows a countdown to the next UTC midnight.
+- `GET /api/play/score` — own row via login proof in headers; `?wallet=` is
+  a public wins-only lookup that powers the "Drops" stat on `/u/[username]`.
+- Rate limits: 30 starts + 30 results per wallet per hour.
+- No approvals, transfers, or token spend — the game reads nothing on-chain.
+
 ### Profiles + avatars
 
 - `/profile` edits username, bio, and social links on the caller's own row —

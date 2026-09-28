@@ -19,6 +19,7 @@ import {
   loadSession,
   loginMessage,
   loungeSessionMessage,
+  playMessage,
   saveSession,
   sessionFresh,
   USERNAME_RE,
@@ -48,6 +49,14 @@ type AuthValue = {
   ) => Promise<{ wallet: string; iso: string; signature: string } | null>;
   // Lounge session proof — one popup authorizes sends for 30 minutes.
   signLounge: () => Promise<{
+    wallet: string;
+    iso: string;
+    signature: string;
+  } | null>;
+  // Drop match proof — one popup per authorized match start / scored win.
+  signPlay: (
+    action: "play_start" | "play_result",
+  ) => Promise<{
     wallet: string;
     iso: string;
     signature: string;
@@ -272,6 +281,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [address, signMessageAsync]);
 
+  // Drop match signature — action-bound (start / result), one popup per
+  // match lifecycle event. The server still owns cap + win accounting.
+  const signPlay = useCallback(
+    async (action: "play_start" | "play_result") => {
+      if (!address) return null;
+      try {
+        const iso = new Date().toISOString();
+        const signature = await signMessageAsync({
+          message: playMessage(action, address, iso),
+        });
+        return { wallet: address.toLowerCase(), iso, signature };
+      } catch {
+        return null;
+      }
+    },
+    [address, signMessageAsync],
+  );
+
   // Shared write path for profile fields: stored login proof → /api/profile.
   const profileSave = useCallback(
     async (fields: Record<string, unknown>): Promise<string | null> => {
@@ -376,6 +403,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verify,
         signAction,
         signLounge,
+        signPlay,
         submitUsername,
         saveProfile,
         setAvatar,

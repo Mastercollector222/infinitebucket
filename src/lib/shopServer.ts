@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { getAddress, verifyMessage } from "viem";
-import { actionMessage, loginMessage } from "./auth";
+import { actionMessage, loginMessage, playMessage } from "./auth";
 import { CHAIN, POOL, TOKEN } from "./constants";
 import { isAdmin } from "./shop";
 
@@ -95,6 +95,33 @@ export function rateLimit(key: string, max: number, windowMs = 3_600_000): boole
     }
   }
   return true;
+}
+
+// Verify a Drop game proof: personal_sign over playMessage(action, wallet,
+// iso). Action-bound (play_start / play_result), 10-minute freshness,
+// never future-dated, chain-bound message.
+export async function verifyPlayProof(
+  wallet: string,
+  iso: string,
+  signature: string,
+  action: "play_start" | "play_result",
+): Promise<string | null> {
+  try {
+    const checksum = getAddress(wallet);
+    const signedAt = Date.parse(iso);
+    if (!Number.isFinite(signedAt)) return null;
+    const now = Date.now();
+    if (signedAt > now + FUTURE_SKEW_MS) return null;
+    if (now - signedAt > ACTION_TTL_MS) return null;
+    const ok = await verifyMessage({
+      address: checksum,
+      message: playMessage(action, checksum, iso),
+      signature: signature as `0x${string}`,
+    });
+    return ok ? checksum.toLowerCase() : null;
+  } catch {
+    return null;
+  }
 }
 
 // Verify the proof AND that the signer is in NEXT_PUBLIC_ADMIN_WALLETS.

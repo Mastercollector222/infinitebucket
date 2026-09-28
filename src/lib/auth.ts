@@ -47,6 +47,16 @@ export function loungeSessionMessage(address: string, iso: string): string {
   return `Infinite Bucket Holders Lounge\nAction: lounge_session\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
 }
 
+// Drop game result proof — signed fresh on each match win so a stored
+// session alone can't inflate the career scoreboard.
+export function playMessage(
+  action: "play_start" | "play_result",
+  address: string,
+  iso: string,
+): string {
+  return `Infinite Bucket Drop\nAction: ${action}\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
+}
+
 export function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
