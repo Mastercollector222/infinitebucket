@@ -175,7 +175,9 @@ export default function PlayPage() {
             ref={iframeRef}
             src="/game/drop.html"
             title="Drop — Infinite Bucket"
-            sandbox="allow-scripts allow-downloads"
+            sandbox="allow-scripts"
+            allow="fullscreen"
+            allowFullScreen
             className="absolute inset-0 h-full w-full border-0"
           />
         ) : (

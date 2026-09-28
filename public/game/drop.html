@@ -1135,7 +1135,7 @@ Score is measured strictly in "Drops".
         <button id="btnSoundToggle" class="btn-action btn-icon-only" title="Toggle Sound">
           <span id="soundIcon">🔊</span>
         </button>
-        <button id="btnDownload" class="btn-action" title="Download Game as single HTML file">⬇ Download</button>
+        <button id="btnFullscreen" class="btn-action btn-icon-only" title="Fullscreen">⛶</button>
         <button id="btnRules" class="btn-action" title="View Game Rules">Rules</button>
         <button id="btnNewGame" class="btn-action">New Game</button>
       </div>
@@ -2058,35 +2058,38 @@ Score is measured strictly in "Drops".
         }
       });
 
-      const btnDownload = document.getElementById('btnDownload');
-      if (btnDownload) {
-        btnDownload.addEventListener('click', () => {
+      const btnFullscreen = document.getElementById('btnFullscreen');
+      if (btnFullscreen) {
+        btnFullscreen.addEventListener('click', () => {
           playTinyClick(700, 0.02);
-          fetch('/index.html')
-            .then(res => res.text())
-            .then(html => {
-              const blob = new Blob([html], { type: 'text/html' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = 'DROP-Infinite-Bucket.html';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-            })
-            .catch(() => {
-              const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-              const blob = new Blob([html], { type: 'text/html' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = 'DROP-Infinite-Bucket.html';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-            });
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          } else {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
         });
       }
+
+      // Fit the whole table into the viewport: shrink proportionally on
+      // short screens instead of scrolling. Presentation only.
+      const appContainerEl = document.querySelector('.app-container');
+      function fitTableToViewport() {
+        appContainerEl.style.transform = '';
+        const need = Math.max(appContainerEl.offsetHeight, appContainerEl.scrollHeight);
+        const avail = window.innerHeight - 28; // body vertical padding
+        const scale = Math.min(1, avail / need);
+        if (scale < 1) {
+          appContainerEl.style.transformOrigin = 'top center';
+          appContainerEl.style.transform = 'scale(' + scale + ')';
+          document.body.style.height = Math.ceil(need * scale) + 'px';
+          document.body.style.overflowY = 'hidden';
+        } else {
+          document.body.style.height = '';
+          document.body.style.overflowY = '';
+        }
+      }
+      window.addEventListener('resize', fitTableToViewport);
+      fitTableToViewport();
 
       // Start game on load
       initGame();
