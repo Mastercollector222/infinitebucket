@@ -14,9 +14,14 @@ const MENU_LINKS = [
   { href: "/shop", label: "Shop" },
   { href: "/play", label: "Play" },
   { href: "/reward-the-holders", label: "Reward the Holders" },
-  { href: "/leaderboard", label: "Leaderboard" },
   { href: "/lounge", label: "Lounge" },
   { href: "/profile", label: "Profile" },
+];
+
+const LEADERBOARD_LINKS = [
+  { href: "/leaderboard", label: "Token holders" },
+  { href: "/leaderboard/drop", label: "Drop · This week" },
+  { href: "/leaderboard/drop/all", label: "Drop · All time" },
 ];
 
 export function Nav() {
@@ -84,7 +89,46 @@ export function Nav() {
 
           {bucket && <BucketChip bucket={bucket} />}
 
-          {MENU_LINKS.map((l) => (
+          {MENU_LINKS.slice(0, 3).map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className="hidden rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-muted)] transition hover:bg-white/[0.04] hover:text-[var(--color-chrome)] lg:inline"
+            >
+              {l.label}
+            </Link>
+          ))}
+
+          <div className="group relative hidden lg:inline">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-muted)] transition hover:bg-white/[0.04] hover:text-[var(--color-chrome)]"
+            >
+              Leaderboard
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M1 1l4 4 4-4" />
+              </svg>
+            </button>
+            <div className="invisible absolute right-0 top-full pt-1 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+              <div className="glass flex min-w-[190px] flex-col p-1.5">
+                {LEADERBOARD_LINKS.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-white/[0.05] ${
+                      pathname === l.href
+                        ? "text-[var(--color-white-soft)]"
+                        : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {MENU_LINKS.slice(3).map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -152,6 +196,23 @@ export function Nav() {
                     href={l.href}
                     onClick={() => setOpen(false)}
                     className={`rounded-xl px-4 py-3.5 text-base font-medium transition hover:bg-white/[0.05] ${
+                      pathname === l.href
+                        ? "text-[var(--color-white-soft)]"
+                        : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+                <div className="border-t border-[var(--color-stroke)] px-4 pb-1 pt-2.5 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                  Leaderboard
+                </div>
+                {LEADERBOARD_LINKS.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={() => setOpen(false)}
+                    className={`rounded-xl px-4 py-2.5 pl-7 text-base font-medium transition hover:bg-white/[0.05] ${
                       pathname === l.href
                         ? "text-[var(--color-white-soft)]"
                         : "text-[var(--color-muted)]"

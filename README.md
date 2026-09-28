@@ -181,6 +181,30 @@ plays_today / plays_day) with RLS on and **zero** public policies; the
 - Rate limits: 30 starts + 30 results per wallet per hour.
 - No approvals, transfers, or token spend — the game reads nothing on-chain.
 
+#### Drop leaderboards
+
+Run `supabase/drop_week.sql` once — `drop_week_scores` + `drop_week_meta`
+(RLS on, zero public policies, service_role only) and replaces
+`drop_start`/`drop_win` so they bookkeep weekly `games`/`wins` alongside
+the career row.
+
+- Week id: `to_char(date_trunc('week', now() at time zone 'utc'), 'IYYY-IW')`
+  — ISO week anchored to UTC Monday. A new `week_id` starts automatically
+  at Monday 00:00 UTC; nothing to cron or flip. Weeks "close" naturally —
+  after Monday, new wins land in the new `week_id` and the old table is
+  frozen.
+- `GET /api/drop/board?scope=week|all` — top 50 by wins, joined to
+  `users` for username/avatar, badges computed from live `balanceOf`
+  (30s cache). Public read; the tables stay service_role-only.
+- `/leaderboard/drop` — weekly board + countdown to next Monday 00:00
+  UTC + "#1 at close receives N USDG" banner + previous-week winner strip
+  (with payout tx link when pasted). `/leaderboard/drop/all` — career
+  wins, never resets.
+- `/admin/drop-week` (admin wallets, signed) — set `prize_usdg` (default
+  10), paste `payout_tx` (a `0x` + 64-hex hash — validated) after sending
+  the USDG manually from the creator wallet, and `closed` to freeze a
+  week on the board. The site never custodies or sends the prize.
+
 ### Profiles + avatars
 
 - `/profile` edits username, bio, and social links on the caller's own row —
