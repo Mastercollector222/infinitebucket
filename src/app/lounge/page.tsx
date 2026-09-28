@@ -16,6 +16,7 @@ import {
   LOUNGE_MIN,
   sanitizeLoungeBody,
   type LoungeMessage,
+  type LoungeMute,
 } from "@/lib/lounge";
 import { isAdmin } from "@/lib/shop";
 
@@ -187,6 +188,7 @@ function Room({
   verify: () => Promise<void>;
 }) {
   const [messages, setMessages] = useState<LoungeMessage[]>([]);
+  const [muted, setMuted] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +213,16 @@ function Room({
         },
       });
       const j = await res.json();
-      if (j.ok) setMessages(j.messages as LoungeMessage[]);
+      if (j.ok) {
+        setMessages(j.messages as LoungeMessage[]);
+        if (Array.isArray(j.muted)) {
+          setMuted(
+            Object.fromEntries(
+              (j.muted as LoungeMute[]).map((m) => [m.wallet, m.until]),
+            ),
+          );
+        }
+      }
     } catch {
       /* transient poll failure — next tick retries */
     }
@@ -328,19 +339,35 @@ function Room({
                         >
                           delete
                         </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            adminCall("/api/admin/lounge", {
-                              action: "mute",
-                              target: m.wallet,
-                              hours: 24,
-                            })
-                          }
-                          className="font-mono text-[0.55rem] uppercase tracking-wider text-[#c9a86a]"
-                        >
-                          mute 24h
-                        </button>
+                        {muted[m.wallet] ? (
+                          <button
+                            type="button"
+                            title={`Muted until ${new Date(muted[m.wallet]).toLocaleString()}`}
+                            onClick={() =>
+                              adminCall("/api/admin/lounge", {
+                                action: "unmute",
+                                target: m.wallet,
+                              })
+                            }
+                            className="font-mono text-[0.55rem] uppercase tracking-wider text-[var(--color-live)]"
+                          >
+                            unmute
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              adminCall("/api/admin/lounge", {
+                                action: "mute",
+                                target: m.wallet,
+                                hours: 24,
+                              })
+                            }
+                            className="font-mono text-[0.55rem] uppercase tracking-wider text-[#c9a86a]"
+                          >
+                            mute 24h
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>

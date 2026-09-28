@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { badgeFor, LOUNGE_MIN, type LoungeMessage } from "@/lib/lounge";
+import {
+  badgeFor,
+  LOUNGE_MIN,
+  type LoungeMessage,
+  type LoungeMute,
+} from "@/lib/lounge";
 import { loungeBalanceTokens } from "@/lib/loungeServer";
+import { isAdmin } from "@/lib/shop";
 import { serviceSupabase, verifyWalletProof } from "@/lib/shopServer";
 
 export const runtime = "nodejs";
@@ -90,5 +96,16 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ ok: true, messages: out });
+  // Active mutes are revealed only to admin callers — drives the
+  // mute/unmute buttons; ordinary members don't see moderation state.
+  let muted: LoungeMute[] | undefined;
+  if (isAdmin(signer)) {
+    const { data: mutes } = await sb
+      .from("lounge_mutes")
+      .select("wallet, until")
+      .gt("until", new Date().toISOString());
+    muted = (mutes ?? []) as LoungeMute[];
+  }
+
+  return NextResponse.json({ ok: true, messages: out, muted });
 }

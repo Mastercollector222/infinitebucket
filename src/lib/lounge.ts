@@ -24,6 +24,7 @@ export function badgeFor(balanceTokens: number): LoungeBadge | null {
 }
 
 export type LoungeBadgeWire = { name: string; color: string } | null;
+export type LoungeMute = { wallet: string; until: string };
 
 export type LoungeMessage = {
   id: string;
