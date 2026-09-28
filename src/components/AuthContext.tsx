@@ -198,6 +198,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(() => {
     setError(null);
+    // Already connected at the wagmi layer → skip connectAsync (it throws
+    // "Connector already connected") and go straight to the signature.
+    if (isConnected && address) {
+      verify(address);
+      return;
+    }
     const injected = connectors[0];
     if (!injected) {
       setError("No injected wallet found. Install MetaMask or Rabby.");
@@ -216,14 +222,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch((e) => {
+        const msg = (e as Error).message;
+        // Race: the wallet connected between our check and connectAsync —
+        // treat it as "already connected" and move on to signing.
+        if (/already connected/i.test(msg) && address) {
+          verify(address);
+          return;
+        }
         setError(
-          /reject|denied|cancel/i.test((e as Error).message)
+          /reject|denied|cancel/i.test(msg)
             ? "Connection request rejected."
-            : `Connect failed: ${(e as Error).message}`,
+            : `Connect failed: ${msg}`,
         );
         setStatus("idle");
       });
-  }, [connectAsync, connectors, verify]);
+  }, [connectAsync, connectors, verify, isConnected, address]);
 
   // Fresh action-bound signature — required by pay + shipment endpoints.
   const signAction = useCallback(
