@@ -14,6 +14,7 @@ const MENU_LINKS = [
   { href: "/shop", label: "Shop" },
   { href: "/reward-the-holders", label: "Reward the Holders" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/lounge", label: "Lounge" },
   { href: "/profile", label: "Profile" },
 ];
 

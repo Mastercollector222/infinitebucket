@@ -107,7 +107,41 @@ alter table public.users add column if not exists avatar_url text;
 - First-time wallets pick a username (`3–16` chars, `[a-zA-Z0-9_]`).
 - The token contract is read-only here — no transfers, no `approve()`.
 - Rate limits (per wallet/hour): 10 order creates, 10 avatar uploads,
-  20 shipment writes, 30 profile writes.
+  20 shipment writes, 30 profile writes, 20 lounge sends.
+
+### Holders Lounge (`/lounge`)
+
+Token-gated chat — `balanceOf >= 5,000,000 INFINITY` on 4663, read live via
+RPC on the client (wagmi) and the server (`eth_call`, 30s cache). Setup:
+run `supabase/lounge.sql` once — it creates `lounge_messages` +
+`lounge_mutes`, enables RLS with **zero** public policies, and grants the
+tables to `service_role` only.
+
+- Under the gate (or disconnected): lock panel — "5,000,000 $INFINITY to
+  enter", current balance, Buy link. No message history is ever fetched or
+  rendered there.
+- Send: `POST /api/lounge/send` requires a content-bound personal_sign —
+  `lounge_send` action + `Body-SHA256` + `Chain: 4663` + timestamp within
+  5 minutes. The server re-hashes the sanitized body (tags stripped, no
+  `javascript:`/`data:`, 1–280 chars), checks the live balance and the
+  mute list, rate-limits 20/hr, then inserts via service_role.
+- Read: `GET /api/lounge/messages` — the login proof travels in headers
+  (`x-wallet`/`x-iso`/`x-signature`); the server re-checks the live
+  balance before returning the last 100 messages joined with
+  `users.username`/`avatar_url` + a per-sender badge computed from live
+  balances. The client polls every 4s (full replace → deletes propagate).
+- Realtime: intentionally **not** used — enabling Supabase Realtime would
+  require a public SELECT policy on `lounge_messages`, which would let any
+  anon key read history and break the 5M gate. Polling is the gate-safe
+  transport.
+- Badges: computed ONLY from live `balanceOf` — Obsidian ≥100M,
+  Amethyst ≥60M, Gold ≥30M, Silver ≥15M, Copper ≥10M, Seat ≥5M. Highest
+  tier only, recomputed at post time and continuously (client balance
+  refetches every 20s; server cache 30s).
+- Moderation: `NEXT_PUBLIC_ADMIN_WALLETS` holders can `DELETE
+  /api/admin/lounge/:id` and `POST /api/admin/lounge`
+  (`mute`/`unmute`, default 24h) after an admin signature.
+- No transfers, tips, or token spend to chat. No PII.
 
 ### Profiles + avatars
 

@@ -18,6 +18,7 @@ import {
   clearSession,
   loadSession,
   loginMessage,
+  loungeSendMessage,
   saveSession,
   sessionFresh,
   USERNAME_RE,
@@ -44,6 +45,10 @@ type AuthValue = {
   signAction: (
     action: string,
     orderId: number,
+  ) => Promise<{ wallet: string; iso: string; signature: string } | null>;
+  // Content-bound lounge send proof — commits to sha256(body), 5-min TTL.
+  signLounge: (
+    body: string,
   ) => Promise<{ wallet: string; iso: string; signature: string } | null>;
   submitUsername: (u: string) => Promise<boolean>;
   saveProfile: (p: ProfileInput) => Promise<string | null>;
@@ -237,6 +242,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [address, signMessageAsync],
   );
 
+  // Lounge messages sign sha256(sanitized body) — the server recomputes the
+  // hash and only accepts if it matches, binding the signature to content.
+  const signLounge = useCallback(
+    async (body: string) => {
+      if (!address || !crypto?.subtle) return null;
+      try {
+        const iso = new Date().toISOString();
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(body),
+        );
+        const sha =
+          "0x" +
+          Array.from(new Uint8Array(digest))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+        const signature = await signMessageAsync({
+          message: loungeSendMessage(address, sha, iso),
+        });
+        return { wallet: address.toLowerCase(), iso, signature };
+      } catch {
+        return null;
+      }
+    },
+    [address, signMessageAsync],
+  );
+
   // Shared write path for profile fields: stored login proof → /api/profile.
   const profileSave = useCallback(
     async (fields: Record<string, unknown>): Promise<string | null> => {
@@ -340,6 +372,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         connect,
         verify,
         signAction,
+        signLounge,
         submitUsername,
         saveProfile,
         setAvatar,

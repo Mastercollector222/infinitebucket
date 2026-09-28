@@ -40,6 +40,16 @@ export function avatarMessage(address: string, iso: string): string {
   return `Infinite Bucket avatar upload\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
 }
 
+// Lounge send proof — content-bound: the signature commits to the sha256
+// of the sanitized body, so it can never be replayed with different text.
+export function loungeSendMessage(
+  address: string,
+  bodySha256: string,
+  iso: string,
+): string {
+  return `Infinite Bucket Holders Lounge\nAction: lounge_send\nAddress: ${address}\nBody-SHA256: ${bodySha256}\nAt: ${iso}\nChain: 4663`;
+}
+
 export function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
