@@ -182,11 +182,14 @@ function Room({
 }: {
   wallet: string;
   balance: number;
-  signLounge: (
-    body: string,
-  ) => Promise<{ wallet: string; iso: string; signature: string } | null>;
+  signLounge: () => Promise<{
+    wallet: string;
+    iso: string;
+    signature: string;
+  } | null>;
   verify: () => Promise<void>;
 }) {
+  type LoungeProof = { wallet: string; iso: string; signature: string; at: number };
   const [messages, setMessages] = useState<LoungeMessage[]>([]);
   const [muted, setMuted] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState("");
@@ -194,6 +197,9 @@ function Room({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
+  // Lounge session proof — one wallet popup per ~25 min of chatting
+  // (server accepts up to 30 min; margin covers clock skew).
+  const loungeProof = useRef<LoungeProof | null>(null);
   const admin = isAdmin(wallet);
 
   // Every poll returns the last 100 — full replace keeps deletes in sync.
@@ -242,19 +248,47 @@ function Room({
 
   const myBadge = badgeFor(balance); // live balance — recomputed every render
 
+  // Reuse a fresh lounge session proof; sign once when it's missing/stale.
+  const loungeSession = async (): Promise<LoungeProof | null> => {
+    const cur = loungeProof.current;
+    if (
+      cur &&
+      cur.wallet === wallet.toLowerCase() &&
+      Date.now() - cur.at < 25 * 60 * 1000
+    ) {
+      return cur;
+    }
+    const p = await signLounge();
+    if (!p) return null;
+    const next = { ...p, at: Date.now() };
+    loungeProof.current = next;
+    return next;
+  };
+
   const send = async () => {
     const clean = sanitizeLoungeBody(draft);
     if (!clean || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const p = await signLounge(clean);
+      let p = await loungeSession();
       if (!p) throw new Error("Signature rejected — nothing sent.");
-      const res = await fetch("/api/lounge/send", {
+      let res = await fetch("/api/lounge/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...p, body: clean }),
       });
+      if (res.status === 401) {
+        // Cached session went stale mid-flight — re-sign once, retry once.
+        loungeProof.current = null;
+        p = await loungeSession();
+        if (!p) throw new Error("Signature rejected — nothing sent.");
+        res = await fetch("/api/lounge/send", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...p, body: clean }),
+        });
+      }
       const j = await res.json();
       if (!j.ok) throw new Error(j.error ?? "Could not send.");
       setDraft("");

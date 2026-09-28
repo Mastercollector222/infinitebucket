@@ -6,7 +6,7 @@ import {
 } from "@/lib/lounge";
 import {
   loungeBalanceTokens,
-  verifyLoungeSend,
+  verifyLoungeSession,
 } from "@/lib/loungeServer";
 import { rateLimit, serviceSupabase } from "@/lib/shopServer";
 
@@ -18,9 +18,11 @@ function fail(status: number, error: string) {
 }
 
 // POST /api/lounge/send — { wallet, iso, signature, body }
-// The signature commits to sha256(body); the server re-verifies the live
-// balance, mute status, and rate limit before the service-role insert.
-// Anon keys can never write lounge_messages — RLS has no policies for them.
+// The signature is a lounge_session proof (30-minute window, chain-bound)
+// — the client signs once, then reuses it across sends. The server
+// re-verifies the live balance, mute status, and rate limit on every send
+// before the service-role insert. Anon keys can never write
+// lounge_messages — RLS has no policies for them.
 export async function POST(req: Request) {
   const sb = serviceSupabase();
   if (!sb) return fail(503, "Lounge storage is not configured.");
@@ -45,10 +47,10 @@ export async function POST(req: Request) {
     return fail(400, "Message must be 1–280 chars of plain text.");
   }
 
-  // Content-bound signature — 5-minute freshness, chain-bound message.
-  const signer = await verifyLoungeSend(wallet, iso, signature, clean);
+  // Lounge session signature — 30-minute freshness, chain-bound message.
+  const signer = await verifyLoungeSession(wallet, iso, signature);
   if (!signer) {
-    return fail(401, "Invalid or stale lounge signature — try again.");
+    return fail(401, "Invalid or stale lounge signature — sign again.");
   }
 
   // Live on-chain gate — a posted balance is never trusted.

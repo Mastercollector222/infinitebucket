@@ -4,7 +4,10 @@
 export const LOUNGE_MIN = 5_000_000; // $INFINITY (human units) to enter
 export const LOUNGE_MAX_BODY = 280;
 export const LOUNGE_SEND_PER_HOUR = 20;
-export const LOUNGE_SIGN_TTL_MS = 5 * 60 * 1000; // send proofs: 5 minutes
+// One lounge_session signature authorizes sends for 30 minutes — a middle
+// ground between a 24h bearer session (too long to post as someone) and a
+// per-message popup (unusable chat).
+export const LOUNGE_SESSION_TTL_MS = 30 * 60 * 1000;
 
 export type LoungeBadge = { name: string; color: string; min: number };
 

@@ -120,11 +120,13 @@ tables to `service_role` only.
 - Under the gate (or disconnected): lock panel — "5,000,000 $INFINITY to
   enter", current balance, Buy link. No message history is ever fetched or
   rendered there.
-- Send: `POST /api/lounge/send` requires a content-bound personal_sign —
-  `lounge_send` action + `Body-SHA256` + `Chain: 4663` + timestamp within
-  5 minutes. The server re-hashes the sanitized body (tags stripped, no
-  `javascript:`/`data:`, 1–280 chars), checks the live balance and the
-  mute list, rate-limits 20/hr, then inserts via service_role.
+- Send: `POST /api/lounge/send` requires a `lounge_session` personal_sign
+  (`Chain: 4663`, timestamp ≤30 min old, never future-dated) — the wallet
+  signs once, the client caches the proof ~25 min and reuses it across
+  sends (re-signs automatically on 401). The server re-verifies the live
+  balance, mute status, and the 20/hr rate limit on *every* send, then
+  inserts the sanitized body (tags stripped, no `javascript:`/`data:`,
+  1–280 chars) via service_role.
 - Read: `GET /api/lounge/messages` — the login proof travels in headers
   (`x-wallet`/`x-iso`/`x-signature`); the server re-checks the live
   balance before returning the last 100 messages joined with
