@@ -21,12 +21,53 @@ const supabaseOrigin = (() => {
   }
 })();
 
+// WalletConnect + Coinbase Wallet endpoints — required for the multi-wallet
+// connect modal. Only loosened when a project id is configured; the
+// injected-only build keeps the tight CSP.
+const wcEnabled = Boolean(process.env.NEXT_PUBLIC_WALLETCONNECT_ID?.trim());
+const wcConnectSrc = wcEnabled
+  ? [
+      "https://*.walletconnect.com",
+      "https://*.walletconnect.org",
+      "wss://*.walletconnect.com",
+      "wss://*.walletconnect.org",
+      "https://*.web3modal.com",
+      "https://*.web3modal.org",
+      "wss://*.web3modal.org",
+      "https://rpc.walletconnect.com",
+      "https://rpc.walletconnect.org",
+      "https://keys.coinbase.com",
+      "https://*.wallet.coinbase.com",
+      "https://cca-lite.coinbase.com",
+    ]
+  : [];
+const wcImgSrc = wcEnabled
+  ? [
+      "https://*.walletconnect.com",
+      "https://*.walletconnect.org",
+      "https://*.web3modal.com",
+      "https://*.web3modal.org",
+    ]
+  : [];
+// The WC Verify pane renders as an iframe inside the connect modal.
+const wcFrameSrc = wcEnabled
+  ? [
+      "https://verify.walletconnect.org",
+      "https://verify.walletconnect.com",
+      "https://secure.walletconnect.org",
+      "https://secure.walletconnect.com",
+      "https://secure-mobile.walletconnect.com",
+      "https://keys.coinbase.com",
+    ]
+  : [];
+
 const connectSrc = [
   "'self'",
   rpcOrigin,
   supabaseOrigin,
   "https://launch.bucketmarkets.com", // giveaway indexer (browser fallback)
   "https://robinhoodchain.blockscout.com",
+  ...wcConnectSrc,
 ]
   .filter(Boolean)
   .join(" ");
@@ -35,9 +76,10 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' https://res.cloudinary.com data:",
+  `img-src 'self' https://res.cloudinary.com data:${wcImgSrc.length ? ` ${wcImgSrc.join(" ")}` : ""}`,
   `connect-src ${connectSrc}`,
   "font-src 'self' data:",
+  wcFrameSrc.length ? `frame-src ${wcFrameSrc.join(" ")}` : "frame-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
