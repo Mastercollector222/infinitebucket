@@ -51,13 +51,28 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+// /game/* documents are framed by our own /play page — allow self-framing
+// only. Every other header (including CSP contents) stays identical.
+const gameCsp = csp.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
+const gameHeaders = securityHeaders.map((h) =>
+  h.key === "Content-Security-Policy"
+    ? { key: h.key, value: gameCsp }
+    : h.key === "X-Frame-Options"
+      ? { key: h.key, value: "SAMEORIGIN" }
+      : h,
+);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: import.meta.dirname,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      // Last matching rule wins per header key — /game/* overrides below.
+      { source: "/game/:path*", headers: gameHeaders },
+    ];
   },
   webpack: (config) => {
     // wagmi / walletconnect optional native deps that must be ignored on web
