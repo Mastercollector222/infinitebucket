@@ -1,20 +1,34 @@
 import { createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { robinhoodChain } from "./chain";
 
-// Injected-only wallet config (MetaMask / browser wallets). We intentionally do
-// NOT use WalletConnect: its Verify API flags dApps whose domain isn't tied to
-// a WalletConnect Cloud project, which produced the "suspected phishing"
-// warnings. Injected connections talk to the wallet directly — no relay, no
-// verify step, no warning — and need no project id.
-export const wagmiConfig = createConfig({
-  chains: [robinhoodChain],
-  connectors: [injected()],
-  transports: {
-    [robinhoodChain.id]: http(robinhoodChain.rpcUrls.default.http[0]),
-  },
-  ssr: true,
-});
+// WalletConnect Cloud project id — enables the multi-wallet modal
+// (RainbowKit: injected wallets, WalletConnect QR, Coinbase Wallet, …).
+// Without it we fall back to injected-only, no crash.
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_ID?.trim() || "";
+export const multiWallet = projectId.length > 0;
+
+// Robinhood Chain 4663 is the ONLY configured chain — no default Ethereum
+// chain to accidentally land on.
+export const wagmiConfig = multiWallet
+  ? getDefaultConfig({
+      appName: "Infinite Bucket",
+      projectId,
+      chains: [robinhoodChain],
+      transports: {
+        [robinhoodChain.id]: http(robinhoodChain.rpcUrls.default.http[0]),
+      },
+      ssr: true,
+    })
+  : createConfig({
+      chains: [robinhoodChain],
+      connectors: [injected()],
+      transports: {
+        [robinhoodChain.id]: http(robinhoodChain.rpcUrls.default.http[0]),
+      },
+      ssr: true,
+    });
 
 declare module "wagmi" {
   interface Register {

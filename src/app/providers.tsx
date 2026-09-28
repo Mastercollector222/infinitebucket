@@ -1,19 +1,50 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { wagmiConfig } from "@/lib/wagmi";
+import "@rainbow-me/rainbowkit/styles.css";
+import {
+  darkTheme,
+  RainbowKitProvider,
+  useConnectModal,
+} from "@rainbow-me/rainbowkit";
+import { multiWallet, wagmiConfig } from "@/lib/wagmi";
+import { setConnectModal } from "@/lib/walletModal";
 
-// Wallet connect UI is intentionally disabled for now — there is no on-chain
-// action to take yet. WagmiProvider stays so read-only contract calls (used for
-// the on-chain token facts) keep working over the public RPC.
+// Registers RainbowKit's openConnectModal into a module store so
+// AuthContext can open it without importing RainbowKit hooks.
+function ConnectModalBridge() {
+  const { openConnectModal } = useConnectModal();
+  useEffect(() => {
+    setConnectModal(openConnectModal ?? null);
+    return () => setConnectModal(null);
+  }, [openConnectModal]);
+  return null;
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
     <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        {multiWallet ? (
+          <RainbowKitProvider
+            modalSize="compact"
+            theme={darkTheme({
+              accentColor: "#a78bfa",
+              accentColorForeground: "#0a0610",
+              borderRadius: "medium",
+            })}
+          >
+            <ConnectModalBridge />
+            {children}
+          </RainbowKitProvider>
+        ) : (
+          children
+        )}
+      </QueryClientProvider>
     </WagmiProvider>
   );
 }

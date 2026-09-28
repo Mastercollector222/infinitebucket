@@ -94,8 +94,15 @@ alter table public.users add column if not exists avatar_url text;
 
 ## Wallet accounts
 
-- Connect an injected wallet (MetaMask / Rabby). If on the wrong network you
-  get a one-click switch to chain 4663.
+- Connect via the RainbowKit modal (enabled when `NEXT_PUBLIC_WALLETCONNECT_ID`
+  is set — a WalletConnect Cloud project id): injected browser wallets
+  (MetaMask / Rabby), WalletConnect QR for mobile wallets (Robinhood
+  Wallet), and Coinbase Wallet. Without the id the site falls back to
+  injected-only — same behaviour as before.
+- Robinhood Chain 4663 is the ONLY configured chain — no default Ethereum
+  chain to land on. If a connected wallet is on another network, the
+  sign-in flow calls `switchChain` (wallets that don't know 4663 get a
+  `wallet_addEthereumChain` prompt with the rpc/explorer/ETH gas params).
 - The wallet signs `Infinite Bucket login\nAddress: <addr>\nAt: <iso>\nChain: 4663`
   via `personal_sign`; the signature is verified server-side before any write.
   Future-dated timestamps (>5 min skew) are rejected.

@@ -9,9 +9,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useSignMessage,
+  useSwitchChain,
+} from "wagmi";
 import { verifyMessage } from "viem";
 import { supabase, type UserRow } from "@/lib/supabase";
+import { CHAIN } from "@/lib/constants";
+import { multiWallet } from "@/lib/wagmi";
+import { openWalletModal, walletModalAvailable } from "@/lib/walletModal";
 import type { ProfileInput } from "@/lib/profile";
 import {
   actionMessage,
@@ -71,16 +80,21 @@ type AuthValue = {
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { connectAsync, connectors } = useConnect();
   const { disconnect: wagmiDisconnect } = useDisconnect();
   const { signMessageAsync } = useSignMessage();
+  const { switchChainAsync } = useSwitchChain();
 
   const [status, setStatus] = useState<AuthStatus>("idle");
   const [username, setUsername] = useState<string | null>(null);
   const [row, setRow] = useState<UserRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
+  // Set when connect() opens the multi-wallet modal — after the wallet
+  // connects, the session effect signs immediately (still inside the
+  // user's action flow).
+  const wantVerify = useRef(false);
   // The verified login signature — reused as an upload proof so avatar
   // changes don't need a second wallet popup.
   const proofRef = useRef<{ iso: string; signature: string; v?: number } | null>(null);
@@ -161,6 +175,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
       setStatus("signing");
       try {
+        // Robinhood Chain only — prompt the wallet to switch/add 4663
+        // before the login signature so everything stays on one chain.
+        if (chainId != null && chainId !== CHAIN.id) {
+          await switchChainAsync({ chainId: CHAIN.id });
+        }
         const iso = new Date().toISOString();
         const message = loginMessage(a, iso);
         const signature = await signMessageAsync({ message });
@@ -174,14 +193,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(
           /reject|denied|cancel/i.test(msg)
             ? "Signature request rejected."
-            : `Sign-in failed: ${msg}`,
+            : /switch|chain/i.test(msg)
+              ? "Switch your wallet to Robinhood Chain (4663) to sign in."
+              : `Sign-in failed: ${msg}`,
         );
         setStatus("needs_verify");
       } finally {
         busy.current = false;
       }
     },
-    [address, signMessageAsync, applyVerified],
+    [address, chainId, signMessageAsync, switchChainAsync, applyVerified],
   );
 
   // Wallet connected → resume a fresh session, or ask for a signature.
@@ -201,6 +222,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applyVerified(address, false).catch(() => setStatus("ready"));
       return;
     }
+    // Just connected through the multi-wallet modal — continue the user's
+    // connect action into the signature (which also enforces chain 4663).
+    if (wantVerify.current) {
+      wantVerify.current = false;
+      verify(address);
+      return;
+    }
     if (status !== "signing" && status !== "needs_username" && status !== "ready") {
       setStatus("needs_verify");
     }
@@ -213,6 +241,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // "Connector already connected") and go straight to the signature.
     if (isConnected && address) {
       verify(address);
+      return;
+    }
+    // Multi-wallet modal (RainbowKit): injected wallets, WalletConnect QR,
+    // Coinbase Wallet — falls back to injected-only when no project id.
+    if (multiWallet && walletModalAvailable()) {
+      wantVerify.current = true;
+      openWalletModal();
       return;
     }
     const injected = connectors[0];
