@@ -45,8 +45,8 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SITE_URL` | No | Canonical URL for metadata/OG (defaults to infinitebucket.net). |
 | `NEXT_PUBLIC_X_URL` | No | Override for the X link (defaults to `https://x.com/InfinityBucket_`). |
 | `NEXT_PUBLIC_TELEGRAM_URL` | No | Override for the Telegram link (defaults to `https://t.me/InfiniteBucket`). |
-| `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1790121600` = 23 Sep 2026 00:00 UTC). Server-side only. |
-| `GIVEAWAY_PAYOUT_TX` | No | Set to the 50 USDG payout tx hash after the creator sends it — the page links it. Server-side only. |
+| `GIVEAWAY_CUTOFF_TS` | No | Giveaway snapshot cutoff, Unix seconds (default `1791158400` = 5 Oct 2026 00:00 UTC). Server-side only. |
+| `GIVEAWAY_PAYOUT_TX` | No | Set to the 20 USDG payout tx hash after the creator sends it — the page links it. Server-side only. |
 | `NEXT_PUBLIC_SHOP_WALLET` | Yes (shop) | Wallet that receives shop payments — shown on the checkout screen. |
 | `NEXT_PUBLIC_ADMIN_WALLETS` | Yes (admin) | Comma-separated lowercase admin wallets. Public list; the signature check in `/api/admin/shop` is the real gate. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes (shop) | Service-role key — **server only, never `NEXT_PUBLIC_`**. All `shop_*` writes are mediated by signature-verified API routes; RLS denies anon writes. |
@@ -234,15 +234,13 @@ the career row.
 Read-only giveaway page — the site never custody funds and never asks for
 deposits.
 
-- Gate: `balanceOf >= 5,000,000 INFINITY` at the snapshot. Excluded: the
+- Gate: `balanceOf >= 1,000,000 INFINITY` at the snapshot. Excluded: the
   Uniswap v4 PoolManager, zero/dead addresses, and the creator wallet
   (`0x7c26…6006`).
-- **Cutoff: 23 Sep 2026 00:00 UTC = Unix `1790121600`.** ⚠️ The original
-  spec wrote `1758412800` — that value is *2025* (one year early). Mountain
-  time is also ambiguous: MDT (UTC-6) → 23:00 UTC vs MST (UTC-7) → 00:00
-  UTC. We implement 00:00 UTC; override with `GIVEAWAY_CUTOFF_TS=1790118000`
-  if the intent was 23:00 UTC (5PM MDT).
-- Before cutoff: countdown + live ≥5M holder estimate (not the official
+- **Cutoff: 5 Oct 2026 00:00 UTC = Unix `1791158400`** (second event —
+  week of 28 Sep → 4 Oct 2026, prize 20 USDG). Override with
+  `GIVEAWAY_CUTOFF_TS`. (First event: 5M gate, 50 USDG, cutoff 23 Sep 2026.)
+- Before cutoff: countdown + live ≥1M holder estimate (not the official
   list).
 - After cutoff: `computeGiveaway()` (`src/lib/giveaway.ts`) binary-searches
   the public RPC for the last block `<= cutoff` (snapshot block), then
@@ -256,7 +254,7 @@ deposits.
   indexer (datacenter IP block), it computes the same result directly in
   the browser — indexer + RPC are CORS-open (same pattern as the engine
   fallback). The server path caches 60s before / 6h after cutoff.
-- After the creator sends the 50 USDG, set `GIVEAWAY_PAYOUT_TX=<tx hash>`
+- After the creator sends the 20 USDG, set `GIVEAWAY_PAYOUT_TX=<tx hash>`
   in env and the page links it. Server-side only (no `NEXT_PUBLIC_`).
 
 ### Shop (`/shop`) + admin (`/admin/shop`)

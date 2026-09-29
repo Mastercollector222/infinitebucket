@@ -7,14 +7,13 @@ import { IX } from "./engine";
 // browser calls, so this module is the client fallback when a datacenter IP
 // can't reach the indexer (same pattern as lib/engine.ts).
 //
-// Cutoff note: spec asked for "20 Sep 2026 17:00 Mountain" -> 00:00 UTC,
-// then extended two days: 23 Sep 2026 00:00 UTC = Unix 1790121600.
-// (The spec's literal 1758412800 is one year early — 2025.)
-// Server-side override via GIVEAWAY_CUTOFF_TS.
+// Second event: launched Mon 28 Sep 2026, one week long — snapshot cutoff
+// Mon 5 Oct 2026 00:00 UTC = Unix 1791158400. Gate lowered to 1,000,000
+// INFINITY; prize 20 USDG. Server-side override via GIVEAWAY_CUTOFF_TS.
 export const GIVEAWAY_CUTOFF_TS =
-  Number(process.env.GIVEAWAY_CUTOFF_TS) || 1_790_121_600;
-export const GIVEAWAY_GATE = 5_000_000;
-const GATE_RAW = 5_000_000n * 10n ** 18n; // 5,000,000 INFINITY, 18 decimals
+  Number(process.env.GIVEAWAY_CUTOFF_TS) || 1_791_158_400;
+export const GIVEAWAY_GATE = 1_000_000;
+const GATE_RAW = 1_000_000n * 10n ** 18n; // 1,000,000 INFINITY, 18 decimals
 
 export const GIVEAWAY_EXCLUDE = new Set(
   [

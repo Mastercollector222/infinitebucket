@@ -49,10 +49,10 @@ export default function RewardPage() {
         Reward the <span className="text-chrome">Holders</span>
       </h1>
       <p className="mt-3 text-sm leading-relaxed text-[var(--color-muted)]">
-        No deposit. We read the chain. One winner. 50 USDG.
+        No deposit. We read the chain. One winner. 20 USDG.
       </p>
       <p className="mt-1 text-sm leading-relaxed text-[var(--color-muted)]">
-        Cutoff: 22 Sep 2026, 5:00 PM Mountain Standard Time (23 Sep 2026 00:00
+        Cutoff: Sunday 4 Oct 2026, 6:00 PM Mountain Time (5 Oct 2026 00:00
         UTC).
       </p>
 
@@ -62,7 +62,7 @@ export default function RewardPage() {
             Prize
           </div>
           <div className="font-display text-2xl font-extrabold text-chrome">
-            50 USDG
+            20 USDG
           </div>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
             Sent by the creator wallet after the snapshot. This site never
@@ -75,7 +75,7 @@ export default function RewardPage() {
           </div>
           <p className="mt-1 text-[var(--color-white-soft)]">
             Hold{" "}
-            <span className="font-mono font-semibold">5,000,000</span> $
+            <span className="font-mono font-semibold">1,000,000</span> $
             {TOKEN.symbol} in one wallet through the cutoff.
           </p>
         </div>
@@ -111,7 +111,7 @@ export default function RewardPage() {
             rows={slice}
             startRank={page * PAGE}
             winnerIndex={null}
-            empty="No wallets currently meet the 5,000,000 threshold."
+            empty="No wallets currently meet the 1,000,000 threshold."
           />
         </>
       ) : (
@@ -190,11 +190,11 @@ export default function RewardPage() {
                   rel="noopener noreferrer"
                   className="mt-3 inline-block text-sm text-[var(--color-buy)] transition hover:text-white"
                 >
-                  50 USDG payout tx ↗
+                  20 USDG payout tx ↗
                 </a>
               ) : (
                 <p className="mt-3 text-xs text-[var(--color-muted)]">
-                  Payout pending — 50 USDG is sent by the creator wallet, not
+                  Payout pending — 20 USDG is sent by the creator wallet, not
                   by this site.
                 </p>
               )}
@@ -211,7 +211,7 @@ export default function RewardPage() {
             rows={slice}
             startRank={page * PAGE}
             winnerIndex={data.winner?.index ?? null}
-            empty="No wallets met the 5,000,000 threshold at the snapshot."
+            empty="No wallets met the 1,000,000 threshold at the snapshot."
           />
         </>
       )}
