@@ -249,6 +249,26 @@ own-wallet enforcement lives in the signed API route.
 - Rate limits: 120 board reads per IP/hr, 60 saves per wallet/hr. No
   approvals, transfers, or token spend — the game touches nothing on-chain.
 
+#### Match race (timed prize event)
+
+Run `supabase/match_race.sql` once — `game_events` (public read,
+service-role write) + the atomic `game_event_close` RPC + this event's
+seed row. Current race: `match-2026-10-18` — 10 USDG to the highest
+`max_level` at **18 Oct 2026 00:00 UTC** (7 days from launch).
+
+- On the first read/save after `ends_at`, the API freezes the winner:
+  the top board row held by a `>=5M INFINITY` wallet (live `balanceOf`,
+  earliest `updated_at` wins ties). `closed=true` can't be re-opened by
+  the RPC, so post-close bumps can't steal the race — and POST freezes
+  *before* bumping for the same reason.
+- The countdown/winner strip shows on `/play/match` (top of page) and
+  above the Match section on `/leaderboard/games/all`.
+- After the creator sends the 10 USDG, update the row's `payout_tx` in
+  Supabase — the strip links it on Blockscout. The site never custodies
+  or sends the prize.
+- Next race: insert another `game_events` row (`kind='race'`); the API
+  always reads the latest event per game.
+
 ### Profiles + avatars
 
 - `/profile` edits username, bio, and social links on the caller's own row —

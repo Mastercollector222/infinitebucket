@@ -1,18 +1,48 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/components/AuthContext";
+import { CHAIN } from "@/lib/constants";
+import { truncateAddress } from "@/lib/format";
 import { DropTable, type DropBoardItem } from "../DropTable";
 import { MatchTable, type MatchBoardItem } from "../MatchTable";
 
 type DropBoardResponse = { ok: boolean; scope: string; items: DropBoardItem[] };
-type MatchBoardResponse = { ok: boolean; items: MatchBoardItem[] };
+type RaceEvent = {
+  ends_at: string;
+  prize_usdg: number;
+  closed: boolean;
+  winner: { wallet: string; username: string | null } | null;
+  prize_level: number | null;
+  payout_tx: string | null;
+};
+type MatchBoardResponse = {
+  ok: boolean;
+  items: MatchBoardItem[];
+  event: RaceEvent | null;
+};
+
+function fmtLeft(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = String(Math.floor((s % 86400) / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return d > 0 ? `${d}d ${h}:${m}:${sec}` : `${h}:${m}:${sec}`;
+}
 
 // All time game leaderboard — per-game sections that never reset. Drop shows
 // career wins (drop_scores); Match shows best level (game_progress). More
 // games slot in as sections as they ship.
 export default function AllTimeGamesBoard() {
   const { address } = useAuth();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const drop = useQuery<DropBoardResponse>({
     queryKey: ["drop-board-all"],
@@ -64,6 +94,50 @@ export default function AllTimeGamesBoard() {
         Free to play. Cash rewards require 5,000,000 $INFINITY held in the
         wallet.
       </p>
+      {match.data?.event && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-[rgba(196,160,255,0.35)] bg-[rgba(168,85,247,0.08)] px-4 py-2.5 text-sm text-[var(--color-chrome)]">
+          {match.data.event.closed ? (
+            <span>
+              Race closed — winner:{" "}
+              {match.data.event.winner ? (
+                <Link
+                  href={`/u/${encodeURIComponent(match.data.event.winner.username ?? match.data.event.winner.wallet)}`}
+                  className="font-semibold hover:text-white"
+                >
+                  {match.data.event.winner.username ?? truncateAddress(match.data.event.winner.wallet)}
+                </Link>
+              ) : (
+                "no eligible player"
+              )}
+              {match.data.event.prize_level != null &&
+                ` · level ${match.data.event.prize_level}`}
+              {match.data.event.payout_tx ? (
+                <>
+                  {" · "}
+                  <a
+                    href={`${CHAIN.explorer}/tx/${match.data.event.payout_tx}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-xs underline decoration-[var(--color-amethyst)] underline-offset-2 hover:text-white"
+                  >
+                    payout tx
+                  </a>
+                </>
+              ) : (
+                " · payout pending"
+              )}
+            </span>
+          ) : (
+            <span>
+              Race: {match.data.event.prize_usdg} USDG to #1 in{" "}
+              <span className="font-mono font-semibold">
+                {fmtLeft(Date.parse(match.data.event.ends_at) - now)}
+              </span>{" "}
+              — 5M+ $INFINITY to qualify
+            </span>
+          )}
+        </div>
+      )}
       <div className="mt-4">
         {match.isLoading ? (
           <SkeletonRows />

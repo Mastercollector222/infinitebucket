@@ -8,8 +8,28 @@ import {
   MatchTable,
   type MatchBoardItem,
 } from "@/app/leaderboard/games/MatchTable";
+import { CHAIN } from "@/lib/constants";
+import { truncateAddress } from "@/lib/format";
 
 type BoardItem = MatchBoardItem;
+type RaceEvent = {
+  id: string;
+  ends_at: string;
+  prize_usdg: number;
+  closed: boolean;
+  winner: { wallet: string; username: string | null; avatar_url: string | null } | null;
+  prize_level: number | null;
+  payout_tx: string | null;
+};
+
+function fmtLeft(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = String(Math.floor((s % 86400) / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return d > 0 ? `${d}d ${h}:${m}:${sec}` : `${h}:${m}:${sec}`;
+}
 
 // The match build posts { type: "ib-progress", game: "well", level } — accept
 // its own identifier plus "match" so a future build can self-report either.
@@ -29,7 +49,9 @@ export default function MatchPage() {
   const [src, setSrc] = useState<string | null>(null);
   const [items, setItems] = useState<BoardItem[]>([]);
   const [mine, setMine] = useState<number | null>(null);
+  const [event, setEvent] = useState<RaceEvent | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const signedIn =
     Boolean(address) &&
@@ -42,6 +64,7 @@ export default function MatchPage() {
     const d = await res.json().catch(() => null);
     if (!d?.ok) return;
     setItems(d.items ?? []);
+    setEvent(d.event ?? null);
     if (d.mine != null) {
       setMine(d.mine);
       lastSaved.current = Math.max(lastSaved.current, d.mine);
@@ -66,7 +89,10 @@ export default function MatchPage() {
         lastSaved.current = Math.max(remote, local, 0);
         setMine(remote || null);
         setSrc(level >= 1 ? `/game/match.html?level=${level}` : "/game/match.html");
-        if (d?.ok) setItems(d.items ?? []);
+        if (d?.ok) {
+          setItems(d.items ?? []);
+          setEvent(d.event ?? null);
+        }
       })
       .catch(() => {
         setSrc(local >= 1 ? `/game/match.html?level=${local}` : "/game/match.html");
@@ -132,8 +158,76 @@ export default function MatchPage() {
     void fetchBoard();
   }, [fetchBoard]);
 
+  // Keep the board + race state fresh; tick the countdown each second while
+  // the race is open.
+  useEffect(() => {
+    const t = setInterval(() => void fetchBoard(), 30_000);
+    return () => clearInterval(t);
+  }, [fetchBoard]);
+  useEffect(() => {
+    if (!event || event.closed) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [event]);
+
   return (
     <div className="mx-auto max-w-6xl py-6" style={{ background: "#07040C" }}>
+      {event && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[rgba(196,160,255,0.35)] bg-[rgba(168,85,247,0.08)] px-4 py-2.5">
+          <span className="text-sm text-[var(--color-chrome)]">
+            {event.closed ? (
+              <>
+                Race closed — winner:{" "}
+                <span className="font-semibold">
+                  {event.winner
+                    ? event.winner.username ?? truncateAddress(event.winner.wallet)
+                    : "no eligible player"}
+                </span>
+                {event.prize_level != null && (
+                  <span className="text-[var(--color-muted)]">
+                    {" "}
+                    · level {event.prize_level}
+                  </span>
+                )}
+                {event.payout_tx ? (
+                  <>
+                    {" · "}
+                    <a
+                      href={`${CHAIN.explorer}/tx/${event.payout_tx}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs underline decoration-[var(--color-amethyst)] underline-offset-2 hover:text-white"
+                    >
+                      payout tx
+                    </a>
+                  </>
+                ) : (
+                  <span className="text-[var(--color-muted)]">
+                    {" "}
+                    · payout pending
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                Race —{" "}
+                <span className="font-semibold">
+                  {event.prize_usdg} USDG to #1 at close
+                </span>{" "}
+                <span className="text-[var(--color-muted)]">
+                  (5M+ $INFINITY to qualify)
+                </span>
+              </>
+            )}
+          </span>
+          <span className="font-mono text-sm font-semibold text-[var(--color-white-soft)]">
+            {event.closed
+              ? "Closed"
+              : `Ends in ${fmtLeft(Date.parse(event.ends_at) - now)}`}
+          </span>
+        </div>
+      )}
+
       <div className="mb-3 flex items-center justify-between">
         <Link
           href="/play"
