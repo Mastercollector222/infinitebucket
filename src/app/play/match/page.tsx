@@ -4,15 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthContext";
 import { sessionProof, type Proof } from "@/components/shop/Checkout";
-import { Avatar } from "@/components/Avatar";
-import { truncateAddress } from "@/lib/format";
+import {
+  MatchTable,
+  type MatchBoardItem,
+} from "@/app/leaderboard/games/MatchTable";
 
-type BoardItem = {
-  wallet: string;
-  max_level: number;
-  username: string | null;
-  avatar_url: string | null;
-};
+type BoardItem = MatchBoardItem;
 
 // The match build posts { type: "ib-progress", game: "well", level } — accept
 // its own identifier plus "match" so a future build can self-report either.
@@ -157,6 +154,12 @@ export default function MatchPage() {
         </div>
       </div>
 
+      <p className="mb-3 text-xs text-[var(--color-muted)]">
+        Free to play — cash rewards require{" "}
+        <span className="font-mono">5,000,000</span> $INFINITY held in the
+        wallet.
+      </p>
+
       <div className="relative overflow-hidden rounded-xl border border-[var(--color-stroke)] bg-[#07040C]">
         {src ? (
           <iframe
@@ -195,52 +198,8 @@ export default function MatchPage() {
             </span>
           )}
         </div>
-        <div className="glass mt-4 overflow-hidden">
-          <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--color-stroke)] px-4 py-2.5 text-xs uppercase tracking-wide text-[var(--color-muted)] sm:grid-cols-[3rem_minmax(0,1fr)_auto]">
-            <span>#</span>
-            <span>Player</span>
-            <span className="text-right">Level</span>
-          </div>
-          {items.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-[var(--color-muted)]">
-              No saved runs yet — clear a level to take the board.
-            </p>
-          ) : (
-            <ol className="flex flex-col">
-              {items.map((it, i) => {
-                const hl = address?.toLowerCase() === it.wallet;
-                return (
-                  <li
-                    key={it.wallet}
-                    className={`grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--color-stroke)] px-4 py-3 last:border-0 sm:grid-cols-[3rem_minmax(0,1fr)_auto] ${
-                      hl ? "bg-[rgba(168,85,247,0.10)]" : ""
-                    }`}
-                  >
-                    <span className="font-mono text-sm text-[var(--color-muted)]">{i + 1}</span>
-                    <Link
-                      href={`/u/${encodeURIComponent(it.username ?? it.wallet)}`}
-                      className="group flex min-w-0 items-center gap-3"
-                    >
-                      <Avatar url={it.avatar_url} wallet={it.wallet} username={it.username} size={32} />
-                      <div className="min-w-0">
-                        <span className="block truncate font-display text-sm font-bold text-[var(--color-white-soft)] transition group-hover:text-white">
-                          {it.username ?? truncateAddress(it.wallet)}
-                        </span>
-                        {it.username && (
-                          <span className="block truncate font-mono text-xs text-[var(--color-muted)]">
-                            {truncateAddress(it.wallet)}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                    <span className="text-right font-mono text-sm font-semibold text-[var(--color-white-soft)]">
-                      {it.max_level}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+        <div className="mt-4">
+          <MatchTable items={items} highlightWallet={address} />
         </div>
       </div>
     </div>

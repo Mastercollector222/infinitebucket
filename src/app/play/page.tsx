@@ -16,7 +16,7 @@ const GAMES = [
     href: "/play/match",
     name: "Match",
     tag: "Level run",
-    desc: "Clear the board, climb the map. Highest level reached is saved to your wallet.",
+    desc: "Clear the board, climb the map. Free to play — cash rewards need 5M $INFINITY.",
   },
 ];
 

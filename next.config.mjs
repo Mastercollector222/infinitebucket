@@ -116,6 +116,13 @@ const nextConfig = {
       { source: "/game/:path*", headers: gameHeaders },
     ];
   },
+  async redirects() {
+    return [
+      // Game boards moved under the game-agnostic /leaderboard/games.
+      { source: "/leaderboard/drop", destination: "/leaderboard/games", permanent: true },
+      { source: "/leaderboard/drop/all", destination: "/leaderboard/games/all", permanent: true },
+    ];
+  },
   webpack: (config) => {
     // wagmi / walletconnect optional native deps that must be ignored on web
     config.externals.push("pino-pretty", "lokijs", "encoding");

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAddress } from "viem";
+import { loungeBalanceTokens } from "@/lib/loungeServer";
 import { rateLimit, serviceSupabase, verifyProgressProof } from "@/lib/shopServer";
 
 export const runtime = "nodejs";
@@ -12,6 +13,9 @@ const ipKey = (req: NextRequest) =>
 // game's postMessage calls itself.
 const GAMES = new Set(["match"]);
 const MAX_LEVEL = 100_000;
+// Cash-reward gate: playing is free for anyone; rewards require this much
+// INFINITY held in the wallet at check time.
+const REWARD_GATE = 5_000_000;
 
 type ProgressRow = { wallet: string; max_level: number };
 
@@ -46,6 +50,12 @@ export async function GET(req: NextRequest) {
     : { data: [] as { wallet: string; username: string | null; avatar_url: string | null }[] };
   const byWallet = new Map((users ?? []).map((u) => [u.wallet, u]));
 
+  // Reward eligibility from live balanceOf (30s cache) — a flag on the row,
+  // never a gate on playing or appearing on the board.
+  const balances = await Promise.all(
+    items.map((r) => loungeBalanceTokens(r.wallet).catch(() => 0)),
+  );
+
   let mine: number | null = null;
   const wallet = req.nextUrl.searchParams.get("wallet");
   if (wallet) {
@@ -67,13 +77,14 @@ export async function GET(req: NextRequest) {
     ok: true,
     game,
     mine,
-    items: items.map((r) => {
+    items: items.map((r, i) => {
       const u = byWallet.get(r.wallet);
       return {
         wallet: r.wallet,
         max_level: r.max_level,
         username: u?.username ?? null,
         avatar_url: u?.avatar_url ?? null,
+        eligible: balances[i] >= REWARD_GATE,
       };
     }),
   });

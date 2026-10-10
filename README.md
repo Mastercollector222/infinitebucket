@@ -208,10 +208,12 @@ the career row.
 - `GET /api/drop/board?scope=week|all` — top 50 by wins, joined to
   `users` for username/avatar, badges computed from live `balanceOf`
   (30s cache). Public read; the tables stay service_role-only.
-- `/leaderboard/drop` — weekly board + countdown to next Monday 00:00
-  UTC + "#1 at close receives N USDG" banner + previous-week winner strip
-  (with payout tx link when pasted). `/leaderboard/drop/all` — career
-  wins, never resets.
+- `/leaderboard/games` — the **weekly game leaderboard**: Drop weekly
+  board + countdown to next Monday 00:00 UTC + "#1 at close receives N
+  USDG" banner + previous-week winner strip (with payout tx link when
+  pasted). `/leaderboard/games/all` — the **all time game leaderboard**:
+  per-game sections that never reset (Drop career wins, Match best
+  level). Old `/leaderboard/drop*` URLs 308-redirect here.
 - `/admin/drop-week` (admin wallets, signed) — set `prize_usdg` (default
   10), paste `payout_tx` (a `0x` + 64-hex hash — validated) after sending
   the USDG manually from the creator wallet, and `closed` to freeze a
@@ -239,6 +241,9 @@ own-wallet enforcement lives in the signed API route.
   The `game_progress_bump` RPC only ever raises `max_level` (never lowers).
 - `GET /api/game/progress?game=match[&wallet=]` — top 20 board joined to
   `users` for username/avatar, plus the caller's own best. Public read.
+  Each row carries `eligible` — live `balanceOf >= 5,000,000` (30s cache).
+  Playing and appearing on the board are free for anyone; only cash
+  rewards are gated, and the flag is computed fresh at read time.
 - The page accepts messages only from its own iframe, only `ib-progress`,
   only sane integer levels; everything else is ignored.
 - Rate limits: 120 board reads per IP/hr, 60 saves per wallet/hr. No

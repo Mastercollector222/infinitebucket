@@ -37,9 +37,10 @@ function fmtLeft(ms: number): string {
   return d > 0 ? `${d}d ${h}:${m}:${sec}` : `${h}:${m}:${sec}`;
 }
 
-// Drop · This week — weekly board from drop_week_scores. Resets Monday
-// 00:00 UTC; the winner is paid manually by the creator (no custody here).
-export default function DropWeeklyBoard() {
+// Weekly game leaderboard — the Drop board from drop_week_scores. Resets
+// Monday 00:00 UTC; the winner is paid manually by the creator (no custody
+// here). More weekly games slot in as sections as they ship.
+export default function WeeklyGamesBoard() {
   const { address } = useAuth();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -65,12 +66,12 @@ export default function DropWeeklyBoard() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Drop · <span className="text-chrome">This week</span>
+            Weekly game <span className="text-chrome">leaderboard</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--color-muted)]">
-            Weekly Drop board. Wins reset Monday 00:00 UTC. All-time stays.
-            First week prize: {prize} USDG to #1. Not gambling — no buy-in,
-            prize from creator bag. Not financial advice.
+            Resets Monday 00:00 UTC. All-time stays. This week&apos;s game:
+            Drop — #1 at close receives {prize} USDG. Not gambling — no
+            buy-in, prize from creator bag. Not financial advice.
           </p>
         </div>
         <div className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-2.5 text-right">

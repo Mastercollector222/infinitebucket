@@ -20,8 +20,8 @@ const MENU_LINKS = [
 
 const LEADERBOARD_LINKS = [
   { href: "/leaderboard", label: "Token holders" },
-  { href: "/leaderboard/drop", label: "Drop · This week" },
-  { href: "/leaderboard/drop/all", label: "Drop · All time" },
+  { href: "/leaderboard/games", label: "Weekly game leaderboard" },
+  { href: "/leaderboard/games/all", label: "All time game leaderboard" },
 ];
 
 export function Nav() {
