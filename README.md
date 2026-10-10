@@ -152,7 +152,12 @@ tables to `service_role` only.
   (`mute`/`unmute`, default 24h) after an admin signature.
 - No transfers, tips, or token spend to chat. No PII.
 
-### Drop (`/play`)
+### Play (`/play`)
+
+`/play` is a game picker — one card per game (`/play/drop`, `/play/match`),
+no wallet required to browse.
+
+### Drop (`/play/drop`)
 
 The Studio game at `public/game/drop.html` embedded in site chrome — rules,
 AI, and art unchanged. Two additive `postMessage` hooks are the only edits:
@@ -211,6 +216,33 @@ the career row.
   10), paste `payout_tx` (a `0x` + 64-hex hash — validated) after sending
   the USDG manually from the creator wallet, and `closed` to freeze a
   week on the board. The site never custodies or sends the prize.
+
+### Match (`/play/match`)
+
+The game at `public/game/match.html` in a same-origin iframe — rules and art
+unchanged, no sandbox attribute (it reads/writes its own localStorage saves).
+The parent owns the wallet and saved level; the game only emits
+`postMessage({ type: "ib-progress", game: "well", level })` when a level is
+cleared (its self-reported id is `"well"`; the board key is `match`).
+
+Setup: run `supabase/game_progress.sql` once — `game_progress`
+(wallet + game → max_level), RLS on. Reads are public for the board; writes
+are service-role only — wallet-only auth means RLS can't see a wallet, so
+own-wallet enforcement lives in the signed API route.
+
+- Resume: the iframe loads `/game/match.html?level=N` with
+  `N = max(server best, localStorage ib-well-level)` — the game honors the
+  param for levels it has unlocked.
+- `POST /api/game/progress` — `progressMessage(wallet, game, iso)`
+  personal_sign (game-bound session proof, ≤30 min, never future-dated) —
+  one popup per ~25 min of play, then each cleared level re-saves silently.
+  The `game_progress_bump` RPC only ever raises `max_level` (never lowers).
+- `GET /api/game/progress?game=match[&wallet=]` — top 20 board joined to
+  `users` for username/avatar, plus the caller's own best. Public read.
+- The page accepts messages only from its own iframe, only `ib-progress`,
+  only sane integer levels; everything else is ignored.
+- Rate limits: 120 board reads per IP/hr, 60 saves per wallet/hr. No
+  approvals, transfers, or token spend — the game touches nothing on-chain.
 
 ### Profiles + avatars
 

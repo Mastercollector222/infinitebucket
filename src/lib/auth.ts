@@ -57,6 +57,18 @@ export function playMessage(
   return `Infinite Bucket Drop\nAction: ${action}\nAddress: ${address}\nAt: ${iso}\nChain: 4663`;
 }
 
+// Game progress session proof — one signature authorizes level-save writes
+// for a specific game for ~30 minutes (same session model as the lounge, so
+// clearing a level mid-run doesn't pop a signature each time). Bound to the
+// game name so a match session can't write another game's board.
+export function progressMessage(
+  address: string,
+  game: string,
+  iso: string,
+): string {
+  return `Infinite Bucket Progress\nAction: progress_session\nAddress: ${address}\nGame: ${game}\nAt: ${iso}\nChain: 4663`;
+}
+
 export function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);

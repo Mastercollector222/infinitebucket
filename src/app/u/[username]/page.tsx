@@ -195,7 +195,7 @@ export default function PublicProfilePage() {
 function Drops({ wins }: { wins: number | undefined }) {
   return (
     <Link
-      href="/play"
+      href="/play/drop"
       className="rounded-xl border border-[var(--color-stroke)] bg-[rgba(14,8,22,0.6)] px-4 py-3 transition hover:border-[rgba(196,160,255,0.4)]"
     >
       <span className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Drops</span>

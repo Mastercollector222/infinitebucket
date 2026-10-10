@@ -29,6 +29,7 @@ import {
   loginMessage,
   loungeSessionMessage,
   playMessage,
+  progressMessage,
   saveSession,
   sessionFresh,
   USERNAME_RE,
@@ -65,6 +66,15 @@ type AuthValue = {
   // Drop match proof — one popup per authorized match start / scored win.
   signPlay: (
     action: "play_start" | "play_result",
+  ) => Promise<{
+    wallet: string;
+    iso: string;
+    signature: string;
+  } | null>;
+  // Progress session proof — one popup authorizes level saves for a game
+  // for ~30 minutes, so clearing levels mid-run doesn't popup each time.
+  signProgress: (
+    game: string,
   ) => Promise<{
     wallet: string;
     iso: string;
@@ -334,6 +344,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [address, signMessageAsync],
   );
 
+  // Progress session signature — game-bound, cached by the caller for ~25
+  // min so each level cleared doesn't trigger a popup.
+  const signProgress = useCallback(
+    async (game: string) => {
+      if (!address) return null;
+      try {
+        const iso = new Date().toISOString();
+        const signature = await signMessageAsync({
+          message: progressMessage(address, game, iso),
+        });
+        return { wallet: address.toLowerCase(), iso, signature };
+      } catch {
+        return null;
+      }
+    },
+    [address, signMessageAsync],
+  );
+
   // Shared write path for profile fields: stored login proof → /api/profile.
   const profileSave = useCallback(
     async (fields: Record<string, unknown>): Promise<string | null> => {
@@ -439,6 +467,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signAction,
         signLounge,
         signPlay,
+        signProgress,
         submitUsername,
         saveProfile,
         setAvatar,

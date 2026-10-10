@@ -3,13 +3,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { getAddress, verifyMessage } from "viem";
-import { actionMessage, loginMessage, playMessage } from "./auth";
+import { actionMessage, loginMessage, playMessage, progressMessage } from "./auth";
 import { CHAIN, POOL, TOKEN } from "./constants";
 import { isAdmin } from "./shop";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTION_TTL_MS = 10 * 60 * 1000; // action-bound proofs: 10 minutes
 const FUTURE_SKEW_MS = 5 * 60 * 1000; // never accept signatures dated ahead
+const PROGRESS_SESSION_TTL_MS = 30 * 60 * 1000; // progress sessions: 30 min
 
 // Service-role client — the ONLY writer to shop_* + users tables. Server-side
 // env only; it must never carry a NEXT_PUBLIC_ prefix or ship to the browser.
@@ -116,6 +117,33 @@ export async function verifyPlayProof(
     const ok = await verifyMessage({
       address: checksum,
       message: playMessage(action, checksum, iso),
+      signature: signature as `0x${string}`,
+    });
+    return ok ? checksum.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Verify a game-progress session proof: personal_sign over
+// progressMessage(wallet, game, iso). 30-minute freshness, never
+// future-dated, bound to the game being saved — mirrors the lounge session.
+export async function verifyProgressProof(
+  wallet: string,
+  iso: string,
+  signature: string,
+  game: string,
+): Promise<string | null> {
+  try {
+    const checksum = getAddress(wallet);
+    const signedAt = Date.parse(iso);
+    if (!Number.isFinite(signedAt)) return null;
+    const now = Date.now();
+    if (signedAt > now + FUTURE_SKEW_MS) return null;
+    if (now - signedAt > PROGRESS_SESSION_TTL_MS) return null;
+    const ok = await verifyMessage({
+      address: checksum,
+      message: progressMessage(checksum, game, iso),
       signature: signature as `0x${string}`,
     });
     return ok ? checksum.toLowerCase() : null;
